@@ -115,8 +115,8 @@ class Booking(Base):
     cancelled_at = Column(DateTime(timezone=True), nullable=True)
     cancellation_reason = Column(Text, nullable=True)
 
-    # Metadata
-    metadata = Column(JSONB, default=dict, nullable=False)
+    # Extra data/metadata
+    extra_data = Column(JSONB, default=dict, nullable=False)
     # Example: {"room_setup": "theater", "catering": true}
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -177,7 +177,7 @@ class Booking(Base):
             "teams_meeting_url": self.teams_meeting_url,
             "cancelled_at": self.cancelled_at.isoformat() if self.cancelled_at else None,
             "cancellation_reason": self.cancellation_reason,
-            "metadata": self.metadata,
+            "extra_data": self.extra_data,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "duration_minutes": self.duration_minutes,
             "is_active": self.is_active,

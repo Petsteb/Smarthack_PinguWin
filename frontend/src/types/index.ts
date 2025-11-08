@@ -18,6 +18,25 @@ export interface EnhancedBoundingBox extends BoundingBox {
 // Floor plan data (array of bounding boxes)
 export type FloorPlanData = BoundingBox[];
 
+// New floor_data.json structure
+export interface Rectangle {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface FloorObject {
+  space: Rectangle[];
+  room?: number; // 1 means it's a room
+  chairs?: Rectangle[];
+  tables?: Rectangle[];
+}
+
+export interface FloorData {
+  [objectName: string]: FloorObject;
+}
+
 // Object type classification rules
 export interface ClassificationRule {
   type: string;

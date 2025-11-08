@@ -79,7 +79,7 @@ class Notification(Base):
     read_at = Column(DateTime(timezone=True), nullable=True)
 
     # Additional data
-    metadata = Column(JSONB, default=dict, nullable=False)
+    extra_data = Column(JSONB, default=dict, nullable=False)
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -106,7 +106,7 @@ class Notification(Base):
             "sent_via_push": self.sent_via_push,
             "sent_via_websocket": self.sent_via_websocket,
             "read_at": self.read_at.isoformat() if self.read_at else None,
-            "metadata": self.metadata,
+            "extra_data": self.extra_data,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "sent_at": self.sent_at.isoformat() if self.sent_at else None,
         }

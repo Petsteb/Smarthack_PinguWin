@@ -4,7 +4,12 @@
       "Bash(pip install:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(npm create:*)"
+      "Bash(npm create:*)",
+      "Bash(pip uninstall:*)",
+      "Bash(ping:*)",
+      "Bash(nul)",
+      "Bash(uvicorn app.main:app:*)",
+      "Bash(copy:*)"
     ],
     "deny": [],
     "ask": []

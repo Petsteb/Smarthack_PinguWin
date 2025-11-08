@@ -114,8 +114,8 @@ class UserAchievement(Base):
     is_unlocked = Column(Boolean, default=False, nullable=False, index=True)
     unlocked_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Metadata
-    metadata = Column(JSONB, default=dict, nullable=False)
+    # Extra data/metadata
+    extra_data = Column(JSONB, default=dict, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(
         DateTime(timezone=True),
@@ -150,6 +150,6 @@ class UserAchievement(Base):
             "current_value": self.current_value,
             "is_unlocked": self.is_unlocked,
             "unlocked_at": self.unlocked_at.isoformat() if self.unlocked_at else None,
-            "metadata": self.metadata,
+            "extra_data": self.extra_data,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }

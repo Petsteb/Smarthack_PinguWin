@@ -43,7 +43,7 @@ class AuditLog(Base):
     request_id = Column(String(100), nullable=True)
 
     # Additional metadata
-    metadata = Column(JSONB, default=dict, nullable=False)
+    extra_data = Column(JSONB, default=dict, nullable=False)
 
     # Timestamp
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
@@ -72,6 +72,6 @@ class AuditLog(Base):
             "ip_address": str(self.ip_address) if self.ip_address else None,
             "user_agent": self.user_agent,
             "request_id": self.request_id,
-            "metadata": self.metadata,
+            "extra_data": self.extra_data,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
