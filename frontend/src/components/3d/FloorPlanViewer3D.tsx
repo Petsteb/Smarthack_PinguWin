@@ -1,43 +1,61 @@
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Grid, Environment } from '@react-three/drei';
 import { Suspense, useState, useEffect } from 'react';
-import * as THREE from 'three';
-import { FloorPlanData, MeshConfiguration, Point } from '@/types';
+import { FloorPlanData, MeshConfiguration, ObjectTypeMapping, EnhancedBoundingBox } from '@/types';
 import { MeshLoader } from './MeshLoader';
+import { classifyObjects, getClassificationStats } from '@/utils/objectClassifier';
 
 interface FloorPlanViewer3DProps {
-  floorPlanData: FloorPlanData;
-  onObjectClick?: (objectId: string, objectType: string) => void;
-  selectedObjectId?: string | null;
+  onObjectClick?: (objectIndex: number, objectType: string) => void;
+  selectedObjectIndex?: number | null;
 }
 
 /**
  * FloorPlanViewer3D - Main 3D viewer component for floor plans
- * Renders rooms and objects using custom 3D meshes based on the JSON floor plan data
+ * Loads out.json and renders objects using custom 3D meshes
+ * Meshes are positioned at the CENTER of each object's bounding box
  */
 export function FloorPlanViewer3D({
-  floorPlanData,
   onObjectClick,
-  selectedObjectId,
+  selectedObjectIndex,
 }: FloorPlanViewer3DProps) {
+  const [floorPlanData, setFloorPlanData] = useState<FloorPlanData | null>(null);
+  const [enhancedObjects, setEnhancedObjects] = useState<EnhancedBoundingBox[]>([]);
   const [meshConfig, setMeshConfig] = useState<MeshConfiguration | null>(null);
+  const [typeMapping, setTypeMapping] = useState<ObjectTypeMapping | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Load mesh configuration
+  // Load all required data
   useEffect(() => {
-    fetch('/assets/meshes/mesh-config.json')
-      .then((res) => res.json())
-      .then((config) => {
-        setMeshConfig(config);
+    Promise.all([
+      fetch('/out.json').then((res) => res.json()),
+      fetch('/assets/meshes/mesh-config.json').then((res) => res.json()),
+      fetch('/assets/meshes/object-type-mapping.json').then((res) => res.json()),
+    ])
+      .then(([floorData, meshCfg, typeMappingData]) => {
+        setFloorPlanData(floorData);
+        setMeshConfig(meshCfg);
+        setTypeMapping(typeMappingData);
+
+        // Classify objects based on their dimensions
+        const classified = classifyObjects(floorData, typeMappingData);
+        setEnhancedObjects(classified);
+
+        // Log classification stats
+        const stats = getClassificationStats(classified);
+        console.log('Object Classification Stats:', stats);
+
         setLoading(false);
       })
-      .catch((error) => {
-        console.error('Error loading mesh config:', error);
+      .catch((err) => {
+        console.error('Error loading floor plan data:', err);
+        setError(err.message);
         setLoading(false);
       });
   }, []);
 
-  if (loading || !meshConfig) {
+  if (loading || !meshConfig || !floorPlanData) {
     return (
       <div className="w-full h-full flex items-center justify-center bg-gray-100">
         <div className="text-center">
@@ -48,11 +66,22 @@ export function FloorPlanViewer3D({
     );
   }
 
+  if (error) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-gray-100">
+        <div className="text-center text-red-600">
+          <p className="text-lg font-semibold">Error loading floor plan</p>
+          <p className="text-sm mt-2">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full h-full relative">
       <Canvas
         camera={{
-          position: [0, 50, 50],
+          position: [0, 100, 100],
           fov: 60,
           near: 0.1,
           far: 10000,
@@ -63,12 +92,12 @@ export function FloorPlanViewer3D({
         {/* Lighting */}
         <ambientLight intensity={meshConfig.settings.ambientLightIntensity} />
         <directionalLight
-          position={[10, 20, 5]}
+          position={[50, 100, 50]}
           intensity={meshConfig.settings.directionalLightIntensity}
           castShadow={meshConfig.settings.enableShadows}
           shadow-mapSize={[2048, 2048]}
         />
-        <pointLight position={[-10, 10, -5]} intensity={0.5} />
+        <pointLight position={[-50, 50, -50]} intensity={0.5} />
 
         {/* Environment */}
         <Suspense fallback={null}>
@@ -78,14 +107,14 @@ export function FloorPlanViewer3D({
         {/* Grid Helper */}
         {meshConfig.settings.gridHelper && (
           <Grid
-            args={[300, 300]}
-            cellSize={5}
+            args={[500, 500]}
+            cellSize={10}
             cellThickness={0.5}
             cellColor="#6b7280"
-            sectionSize={10}
+            sectionSize={50}
             sectionThickness={1}
             sectionColor="#4b5563"
-            fadeDistance={400}
+            fadeDistance={800}
             fadeStrength={1}
           />
         )}
@@ -93,10 +122,10 @@ export function FloorPlanViewer3D({
         {/* Floor Plan Objects */}
         <Suspense fallback={null}>
           <FloorPlanObjects
-            floorPlanData={floorPlanData}
+            objects={enhancedObjects}
             meshConfig={meshConfig}
             onObjectClick={onObjectClick}
-            selectedObjectId={selectedObjectId}
+            selectedObjectIndex={selectedObjectIndex}
           />
         </Suspense>
 
@@ -108,8 +137,8 @@ export function FloorPlanViewer3D({
           autoRotate={meshConfig.settings.autoRotation}
           autoRotateSpeed={0.5}
           maxPolarAngle={Math.PI / 2}
-          minDistance={10}
-          maxDistance={200}
+          minDistance={20}
+          maxDistance={500}
         />
       </Canvas>
 
@@ -123,75 +152,66 @@ export function FloorPlanViewer3D({
           <li>🖱️ Click Object: Select</li>
         </ul>
       </div>
+
+      {/* Object Count */}
+      <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm p-3 rounded-lg shadow-lg text-sm">
+        <p className="font-semibold text-gray-900">
+          {enhancedObjects.length} Objects
+        </p>
+      </div>
     </div>
   );
 }
 
 interface FloorPlanObjectsProps {
-  floorPlanData: FloorPlanData;
+  objects: EnhancedBoundingBox[];
   meshConfig: MeshConfiguration;
-  onObjectClick?: (objectId: string, objectType: string) => void;
-  selectedObjectId?: string | null;
+  onObjectClick?: (objectIndex: number, objectType: string) => void;
+  selectedObjectIndex?: number | null;
 }
 
 function FloorPlanObjects({
-  floorPlanData,
+  objects,
   meshConfig,
   onObjectClick,
-  selectedObjectId,
+  selectedObjectIndex,
 }: FloorPlanObjectsProps) {
-  // Helper function to convert 2D polygon to 3D position
-  const get3DPosition = (bounds: any, offset: [number, number, number]): [number, number, number] => {
-    // Scale down the coordinates (floor plans are often in large units)
-    const scale = 0.01; // Adjust this based on your floor plan scale
+  /**
+   * Convert 2D bounding box to 3D position
+   * Meshes are placed at the CENTER of each bounding box
+   */
+  const get3DPosition = (obj: EnhancedBoundingBox): [number, number, number] => {
+    // Scale factor to convert floor plan coordinates to 3D world coordinates
+    // Adjust this value based on your floor plan scale
+    const scale = 0.05;
 
-    const x = (bounds.centerX * scale) + offset[0];
-    const y = offset[1]; // Y is height
-    const z = (bounds.centerY * scale) + offset[2];
+    // Use the calculated center coordinates
+    const x = obj.centerX * scale;
+    const y = 0; // Y is height (ground level)
+    const z = obj.centerY * scale;
 
     return [x, y, z];
   };
 
   return (
     <group>
-      {/* Render Rooms */}
-      {floorPlanData.rooms.map((room) => {
-        const config = meshConfig.meshes[room.type] || meshConfig.meshes.room;
-        if (!config) return null;
-
-        const position = get3DPosition(room.bounds, config.offset);
-        const isSelected = selectedObjectId === room.id;
-
-        return (
-          <MeshLoader
-            key={room.id}
-            type={room.type}
-            config={config}
-            position={position}
-            onClick={() => onObjectClick?.(room.id, room.type)}
-            isSelected={isSelected}
-          />
-        );
-      })}
-
-      {/* Render Objects */}
-      {floorPlanData.objects.map((object) => {
-        const config = meshConfig.meshes[object.type];
+      {objects.map((obj) => {
+        const config = meshConfig.meshes[obj.mesh];
         if (!config) {
-          console.warn(`No mesh config found for object type: ${object.type}`);
+          console.warn(`No mesh config found for type: ${obj.mesh}`);
           return null;
         }
 
-        const position = get3DPosition(object.bounds, config.offset);
-        const isSelected = selectedObjectId === object.id;
+        const position = get3DPosition(obj);
+        const isSelected = selectedObjectIndex === obj.index;
 
         return (
           <MeshLoader
-            key={object.id}
-            type={object.type}
+            key={obj.index}
+            type={obj.mesh}
             config={config}
             position={position}
-            onClick={() => onObjectClick?.(object.id, object.type)}
+            onClick={() => onObjectClick?.(obj.index, obj.type)}
             isSelected={isSelected}
           />
         );

@@ -1,4 +1,58 @@
-// Floor plan types
+// Bounding box from out.json
+export interface BoundingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+// Extended bounding box with calculated center
+export interface EnhancedBoundingBox extends BoundingBox {
+  centerX: number;
+  centerY: number;
+  index: number;
+  type: string;
+  mesh: string;
+}
+
+// Floor plan data (array of bounding boxes)
+export type FloorPlanData = BoundingBox[];
+
+// Object type classification rules
+export interface ClassificationRule {
+  type: string;
+  mesh: string;
+  conditions: {
+    min_width?: number;
+    max_width?: number;
+    min_height?: number;
+    max_height?: number;
+    min_dimension?: number;
+    max_dimension?: number;
+    aspect_ratio_min?: number;
+    aspect_ratio_max?: number;
+    description: string;
+  };
+}
+
+export interface ObjectTypeMapping {
+  classification_rules: {
+    description: string;
+    rules: ClassificationRule[];
+    default: {
+      type: string;
+      mesh: string;
+      description: string;
+    };
+  };
+  manual_mappings?: Array<{
+    index: number;
+    type: string;
+    name?: string;
+  }>;
+}
+
+// Legacy types (keeping for backward compatibility)
 export interface Point {
   x: number;
   y: number;
@@ -13,29 +67,6 @@ export interface Bounds {
   centerY: number;
   width: number;
   height: number;
-}
-
-export interface FloorPlanRoom {
-  id: string;
-  name: string;
-  type: string;
-  polygon: Point[];
-  bounds: Bounds;
-}
-
-export interface FloorPlanObject {
-  id: string;
-  name: string;
-  type: string;
-  polygon: Point[];
-  bounds: Bounds;
-  room?: string;
-  roomName?: string;
-}
-
-export interface FloorPlanData {
-  rooms: FloorPlanRoom[];
-  objects: FloorPlanObject[];
 }
 
 // Mesh configuration types

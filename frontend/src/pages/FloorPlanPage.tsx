@@ -1,25 +1,26 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Info, Maximize2 } from 'lucide-react';
+import { ArrowLeft, Info } from 'lucide-react';
 import { FloorPlanViewer3D } from '@/components/3d/FloorPlanViewer3D';
-import { FloorPlanData } from '@/types';
+import { FloorPlanData, EnhancedBoundingBox } from '@/types';
+import { classifyObjects } from '@/utils/objectClassifier';
 
 export default function FloorPlanPage() {
-  const [floorPlanData, setFloorPlanData] = useState<FloorPlanData | null>(null);
-  const [selectedObject, setSelectedObject] = useState<string | null>(null);
-  const [selectedObjectData, setSelectedObjectData] = useState<any>(null);
+  const [selectedObjectIndex, setSelectedObjectIndex] = useState<number | null>(null);
+  const [selectedObjectData, setSelectedObjectData] = useState<EnhancedBoundingBox | null>(null);
+  const [allObjects, setAllObjects] = useState<EnhancedBoundingBox[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Load floor plan JSON data
+  // Load floor plan data and classify objects
   useEffect(() => {
-    fetch('/floor_plan_data.json')
-      .then((res) => {
-        if (!res.ok) throw new Error('Failed to load floor plan data');
-        return res.json();
-      })
-      .then((data) => {
-        setFloorPlanData(data);
+    Promise.all([
+      fetch('/out.json').then((res) => res.json()),
+      fetch('/assets/meshes/object-type-mapping.json').then((res) => res.json()),
+    ])
+      .then(([floorData, typeMappingData]) => {
+        const classified = classifyObjects(floorData, typeMappingData);
+        setAllObjects(classified);
         setLoading(false);
       })
       .catch((err) => {
@@ -30,20 +31,12 @@ export default function FloorPlanPage() {
   }, []);
 
   // Handle object selection
-  const handleObjectClick = (objectId: string, objectType: string) => {
-    setSelectedObject(objectId);
+  const handleObjectClick = (objectIndex: number, objectType: string) => {
+    setSelectedObjectIndex(objectIndex);
 
     // Find the selected object data
-    if (!floorPlanData) return;
-
-    let objData = null;
-    if (objectType === 'room') {
-      objData = floorPlanData.rooms.find((r) => r.id === objectId);
-    } else {
-      objData = floorPlanData.objects.find((o) => o.id === objectId);
-    }
-
-    setSelectedObjectData(objData);
+    const objData = allObjects.find((o) => o.index === objectIndex);
+    setSelectedObjectData(objData || null);
   };
 
   if (loading) {
@@ -57,11 +50,11 @@ export default function FloorPlanPage() {
     );
   }
 
-  if (error || !floorPlanData) {
+  if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="text-center">
-          <p className="text-red-600 text-lg">Error: {error || 'Failed to load floor plan'}</p>
+          <p className="text-red-600 text-lg">Error: {error}</p>
           <Link to="/" className="mt-4 inline-block text-blue-600 hover:underline">
             Go Back Home
           </Link>
@@ -88,13 +81,7 @@ export default function FloorPlanPage() {
 
           <div className="flex items-center gap-4">
             <div className="text-sm text-gray-600">
-              <span className="font-semibold">{floorPlanData.rooms.length}</span> Rooms
-              {floorPlanData.objects.length > 0 && (
-                <>
-                  {' | '}
-                  <span className="font-semibold">{floorPlanData.objects.length}</span> Objects
-                </>
-              )}
+              <span className="font-semibold">{allObjects.length}</span> Objects Loaded
             </div>
           </div>
         </div>
@@ -105,9 +92,8 @@ export default function FloorPlanPage() {
         {/* 3D Viewer */}
         <div className="flex-1 relative">
           <FloorPlanViewer3D
-            floorPlanData={floorPlanData}
             onObjectClick={handleObjectClick}
-            selectedObjectId={selectedObject}
+            selectedObjectIndex={selectedObjectIndex}
           />
         </div>
 
@@ -119,7 +105,7 @@ export default function FloorPlanPage() {
                 <h2 className="text-xl font-bold text-gray-900">Object Details</h2>
                 <button
                   onClick={() => {
-                    setSelectedObject(null);
+                    setSelectedObjectIndex(null);
                     setSelectedObjectData(null);
                   }}
                   className="text-gray-400 hover:text-gray-600"
@@ -130,8 +116,8 @@ export default function FloorPlanPage() {
 
               <div className="space-y-4">
                 <div>
-                  <label className="text-sm font-semibold text-gray-600">Name</label>
-                  <p className="text-lg font-medium text-gray-900">{selectedObjectData.name}</p>
+                  <label className="text-sm font-semibold text-gray-600">Index</label>
+                  <p className="text-lg font-medium text-gray-900">#{selectedObjectData.index}</p>
                 </div>
 
                 <div>
@@ -140,40 +126,48 @@ export default function FloorPlanPage() {
                 </div>
 
                 <div>
-                  <label className="text-sm font-semibold text-gray-600">ID</label>
-                  <p className="text-xs text-gray-600 font-mono">{selectedObjectData.id}</p>
-                </div>
-
-                {selectedObjectData.roomName && (
-                  <div>
-                    <label className="text-sm font-semibold text-gray-600">Room</label>
-                    <p className="text-gray-900">{selectedObjectData.roomName}</p>
-                  </div>
-                )}
-
-                <div>
-                  <label className="text-sm font-semibold text-gray-600">Dimensions</label>
-                  <p className="text-gray-900">
-                    {selectedObjectData.bounds.width.toFixed(1)} ×{' '}
-                    {selectedObjectData.bounds.height.toFixed(1)}
-                  </p>
+                  <label className="text-sm font-semibold text-gray-600">Mesh</label>
+                  <p className="text-gray-900 capitalize">{selectedObjectData.mesh}</p>
                 </div>
 
                 <div>
-                  <label className="text-sm font-semibold text-gray-600">Center Position</label>
+                  <label className="text-sm font-semibold text-gray-600">Position (2D)</label>
                   <p className="text-gray-900 font-mono text-sm">
-                    x: {selectedObjectData.bounds.centerX.toFixed(1)}, y:{' '}
-                    {selectedObjectData.bounds.centerY.toFixed(1)}
+                    x: {selectedObjectData.x.toFixed(1)}, y: {selectedObjectData.y.toFixed(1)}
                   </p>
                 </div>
 
-                {selectedObjectData.type === 'room' && (
+                <div>
+                  <label className="text-sm font-semibold text-gray-600">Size</label>
+                  <p className="text-gray-900">
+                    {selectedObjectData.width.toFixed(1)} × {selectedObjectData.height.toFixed(1)}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="text-sm font-semibold text-gray-600">Center Point</label>
+                  <p className="text-gray-900 font-mono text-sm">
+                    x: {selectedObjectData.centerX.toFixed(1)}, y:{' '}
+                    {selectedObjectData.centerY.toFixed(1)}
+                  </p>
+                </div>
+
+                {(selectedObjectData.type === 'room' || selectedObjectData.type === 'desk') && (
                   <div className="pt-4 border-t">
                     <button className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition">
-                      Book This Room
+                      Book This {selectedObjectData.type === 'room' ? 'Room' : 'Desk'}
                     </button>
                   </div>
                 )}
+
+                <div className="pt-4 border-t">
+                  <label className="text-sm font-semibold text-gray-600 mb-2 block">
+                    3D Position
+                  </label>
+                  <p className="text-xs text-gray-500">
+                    Mesh is placed at the CENTER of the bounding box in 3D space.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -187,9 +181,13 @@ export default function FloorPlanPage() {
             <Info size={20} className="text-blue-600 mt-0.5" />
             <div>
               <h3 className="font-semibold text-gray-900 mb-1">How to use</h3>
-              <p className="text-sm text-gray-600">
-                Click on any room or object to view details and book. Use your mouse to rotate,
-                pan, and zoom the 3D view.
+              <p className="text-sm text-gray-600 mb-2">
+                Click on any object to view details. Use your mouse to rotate, pan, and zoom the
+                3D view.
+              </p>
+              <p className="text-xs text-gray-500">
+                Objects are automatically classified based on their dimensions. You can customize
+                the classification rules in object-type-mapping.json.
               </p>
             </div>
           </div>
