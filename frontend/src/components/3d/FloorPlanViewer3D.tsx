@@ -2,7 +2,6 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Grid, Environment } from '@react-three/drei';
 import { Suspense, useState, useEffect, useMemo } from 'react';
 import { FloorData, MeshConfiguration, Rectangle } from '@/types';
-import { MeshLoader } from './MeshLoader';
 import * as THREE from 'three';
 import { Check, X } from 'lucide-react';
 
@@ -27,7 +26,7 @@ const ROOM_COLORS = [
  * FloorPlanViewer3D - Main 3D viewer component for floor plans
  * Loads floor_data.json and renders rooms and objects
  * Rooms are rendered as colored floor rectangles
- * Objects (desks, chairs, tables) are rendered as 3D meshes
+ * Objects (desks, chairs, tables) are rendered as extruded boxes
  */
 export function FloorPlanViewer3D({
   onObjectClick,
@@ -41,6 +40,7 @@ export function FloorPlanViewer3D({
   // Filter states
   const [visibleObjects, setVisibleObjects] = useState<Set<string>>(new Set());
   const [showRooms, setShowRooms] = useState(true);
+  const [showWalls, setShowWalls] = useState(true);
 
   // Load all required data
   useEffect(() => {
@@ -183,7 +183,7 @@ export function FloorPlanViewer3D({
           )}
 
           {/* Render Walls */}
-          {walls && (
+          {showWalls && walls && (
             <Suspense fallback={null}>
               <WallsRenderer walls={walls} meshConfig={meshConfig} />
             </Suspense>
@@ -243,6 +243,21 @@ export function FloorPlanViewer3D({
       <div className="w-80 bg-white shadow-lg overflow-y-auto">
         <div className="p-4">
           <h2 className="text-lg font-bold mb-4">Filters</h2>
+
+          {/* Walls Toggle */}
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-semibold text-sm text-gray-700">Walls</h3>
+              <button
+                onClick={() => setShowWalls(!showWalls)}
+                className={`text-xs px-3 py-1 rounded ${
+                  showWalls ? 'bg-green-100 hover:bg-green-200' : 'bg-gray-100 hover:bg-gray-200'
+                }`}
+              >
+                {showWalls ? 'Hide' : 'Show'}
+              </button>
+            </div>
+          </div>
 
           {/* Rooms Section */}
           <div className="mb-6">
@@ -366,17 +381,144 @@ interface RoomFloorsProps {
 function RoomFloors({ rooms, visibleObjects, onRoomClick, selectedObject }: RoomFloorsProps) {
   const scale = 0.05; // Scale factor for converting coordinates
 
+  // Helper function to render furniture (tables/chairs) for a room or sub-area
+  const renderFurniture = (
+    name: string,
+    data: any,
+    isSelected: boolean,
+    keyPrefix: string
+  ) => {
+    const furniture: JSX.Element[] = [];
+
+    // Render tables
+    if (data.tables && Array.isArray(data.tables)) {
+      data.tables.forEach((rect: Rectangle, index: number) => {
+        const centerX = (rect.x + rect.width / 2) * scale;
+        const centerZ = (rect.y + rect.height / 2) * scale;
+        const width = rect.width * scale;
+        const depth = rect.height * scale;
+        const height = 1.5;
+
+        furniture.push(
+          <mesh
+            key={`${keyPrefix}-table-${index}`}
+            position={[centerX, height / 2, centerZ]}
+            onClick={() => onRoomClick?.(name, 'table')}
+            castShadow
+            receiveShadow
+          >
+            <boxGeometry args={[width, height, depth]} />
+            <meshStandardMaterial
+              color="#9B59B6"
+              emissive={isSelected ? '#9B59B6' : '#000000'}
+              emissiveIntensity={isSelected ? 0.3 : 0}
+            />
+          </mesh>
+        );
+      });
+    }
+
+    // Render chairs
+    if (data.chairs && Array.isArray(data.chairs)) {
+      data.chairs.forEach((rect: Rectangle, index: number) => {
+        const centerX = (rect.x + rect.width / 2) * scale;
+        const centerZ = (rect.y + rect.height / 2) * scale;
+        const width = rect.width * scale;
+        const depth = rect.height * scale;
+        const height = 1.0;
+
+        furniture.push(
+          <mesh
+            key={`${keyPrefix}-chair-${index}`}
+            position={[centerX, height / 2, centerZ]}
+            onClick={() => onRoomClick?.(name, 'chair')}
+            castShadow
+            receiveShadow
+          >
+            <boxGeometry args={[width, height, depth]} />
+            <meshStandardMaterial
+              color="#FFD93D"
+              emissive={isSelected ? '#FFD93D' : '#000000'}
+              emissiveIntensity={isSelected ? 0.3 : 0}
+            />
+          </mesh>
+        );
+      });
+    }
+
+    return furniture;
+  };
+
+  // Helper function to render nested sub-areas within a room
+  const renderNestedAreas = (
+    roomName: string,
+    data: any,
+    color: string,
+    isSelected: boolean
+  ) => {
+    const nestedElements: JSX.Element[] = [];
+
+    // Check each property for nested objects (like teamMeetings.small, teamMeetings.round4, etc.)
+    Object.entries(data).forEach(([key, value]) => {
+      // Skip known properties that are not nested areas
+      if (key === 'space' || key === 'tables' || key === 'chairs' || key === 'room' || key === 'couch') {
+        return;
+      }
+
+      // If it's a nested object with space property, render it
+      if (typeof value === 'object' && value !== null && 'space' in value) {
+        const nestedData = value as any;
+
+        // Render nested area floors
+        if (nestedData.space && Array.isArray(nestedData.space)) {
+          nestedData.space.forEach((rect: Rectangle, index: number) => {
+            const centerX = (rect.x + rect.width / 2) * scale;
+            const centerZ = (rect.y + rect.height / 2) * scale;
+            const width = rect.width * scale;
+            const depth = rect.height * scale;
+
+            nestedElements.push(
+              <mesh
+                key={`${roomName}-${key}-floor-${index}`}
+                position={[centerX, 0.1, centerZ]}
+                rotation={[-Math.PI / 2, 0, 0]}
+                onClick={() => onRoomClick?.(roomName, 'room')}
+                receiveShadow
+              >
+                <planeGeometry args={[width, depth]} />
+                <meshStandardMaterial
+                  color={color}
+                  opacity={isSelected ? 0.9 : 0.7}
+                  transparent
+                  side={THREE.DoubleSide}
+                  emissive={isSelected ? color : '#000000'}
+                  emissiveIntensity={isSelected ? 0.3 : 0}
+                />
+              </mesh>
+            );
+          });
+        }
+
+        // Render furniture in nested areas
+        nestedElements.push(...renderFurniture(roomName, nestedData, isSelected, `${roomName}-${key}`));
+      }
+    });
+
+    return nestedElements;
+  };
+
   return (
     <group>
       {rooms.map(({ name, data, color }) => {
         if (!visibleObjects.has(name)) return null;
-        if (!data.space || !Array.isArray(data.space) || data.space.length === 0) return null;
 
         const isSelected = selectedObject === name;
+        const hasMainSpace = data.space && Array.isArray(data.space) && data.space.length > 0;
 
         return (
           <group key={name}>
-            {data.space.map((rect, rectIndex) => {
+            {/* Render main room floor if it has space */}
+            {hasMainSpace && data.space!.map((rect, rectIndex) => {
               const centerX = (rect.x + rect.width / 2) * scale;
               const centerZ = (rect.y + rect.height / 2) * scale;
               const width = rect.width * scale;
@@ -384,7 +526,7 @@ function RoomFloors({ rooms, visibleObjects, onRoomClick, selectedObject }: Room
 
               return (
                 <mesh
-                  key={`${name}-${rectIndex}`}
+                  key={`${name}-floor-${rectIndex}`}
                   position={[centerX, 0.1, centerZ]}
                   rotation={[-Math.PI / 2, 0, 0]}
                   onClick={() => onRoomClick?.(name, 'room')}
@@ -402,6 +544,12 @@ function RoomFloors({ rooms, visibleObjects, onRoomClick, selectedObject }: Room
                 </mesh>
               );
             })}
+
+            {/* Render furniture in main room */}
+            {renderFurniture(name, data, isSelected, name)}
+
+            {/* Render nested sub-areas (like teamMeetings.small, teamMeetings.round4, etc.) */}
+            {renderNestedAreas(name, data, color, isSelected)}
           </group>
         );
       })}
@@ -409,7 +557,7 @@ function RoomFloors({ rooms, visibleObjects, onRoomClick, selectedObject }: Room
   );
 }
 
-// Component to render objects with meshes
+// Component to render objects as extruded boxes
 interface FloorPlanObjectsProps {
   objects: Array<{ name: string; data: FloorData[string] }>;
   meshConfig: MeshConfiguration;
@@ -464,41 +612,30 @@ function FloorPlanObjects({
             {data.space.map((rect, index) => {
               const centerX = (rect.x + rect.width / 2) * scale;
               const centerZ = (rect.y + rect.height / 2) * scale;
+              const width = rect.width * scale;
+              const depth = rect.height * scale;
 
-              // For walls, tables, and desks, use extruded boxes instead of meshes
-              if (meshType === 'wall' || meshType === 'table' || meshType === 'desk') {
-                const width = rect.width * scale;
-                const depth = rect.height * scale;
-                // Set height based on object type: walls are tallest, desks and tables are similar
-                const height = meshType === 'wall' ? 4 : (meshType === 'desk' ? 1.2 : 1.5);
-
-                return (
-                  <mesh
-                    key={`${name}-space-${index}`}
-                    position={[centerX, height / 2, centerZ]}
-                    onClick={() => onObjectClick?.(name, meshType)}
-                    castShadow
-                    receiveShadow
-                  >
-                    <boxGeometry args={[width, height, depth]} />
-                    <meshStandardMaterial
-                      color={config.color}
-                      emissive={isSelected ? config.color : '#000000'}
-                      emissiveIntensity={isSelected ? 0.3 : 0}
-                    />
-                  </mesh>
-                );
-              }
+              // Set height based on object type
+              let height = 1.2; // Default for desks
+              if (meshType === 'wall') height = 4;
+              else if (meshType === 'table') height = 1.5;
+              else if (meshType === 'chair') height = 1.0;
 
               return (
-                <MeshLoader
+                <mesh
                   key={`${name}-space-${index}`}
-                  type={meshType}
-                  config={config}
-                  position={[centerX, 0, centerZ]}
+                  position={[centerX, height / 2, centerZ]}
                   onClick={() => onObjectClick?.(name, meshType)}
-                  isSelected={isSelected}
-                />
+                  castShadow
+                  receiveShadow
+                >
+                  <boxGeometry args={[width, height, depth]} />
+                  <meshStandardMaterial
+                    color={config.color}
+                    emissive={isSelected ? config.color : '#000000'}
+                    emissiveIntensity={isSelected ? 0.3 : 0}
+                  />
+                </mesh>
               );
             })}
 
@@ -509,16 +646,25 @@ function FloorPlanObjects({
 
               const centerX = (rect.x + rect.width / 2) * scale;
               const centerZ = (rect.y + rect.height / 2) * scale;
+              const width = rect.width * scale;
+              const depth = rect.height * scale;
+              const height = 1.0; // Chair height
 
               return (
-                <MeshLoader
+                <mesh
                   key={`${name}-chair-${index}`}
-                  type="chair"
-                  config={chairConfig}
-                  position={[centerX, 0, centerZ]}
+                  position={[centerX, height / 2, centerZ]}
                   onClick={() => onObjectClick?.(name, 'chair')}
-                  isSelected={isSelected}
-                />
+                  castShadow
+                  receiveShadow
+                >
+                  <boxGeometry args={[width, height, depth]} />
+                  <meshStandardMaterial
+                    color={chairConfig.color}
+                    emissive={isSelected ? chairConfig.color : '#000000'}
+                    emissiveIntensity={isSelected ? 0.3 : 0}
+                  />
+                </mesh>
               );
             })}
 
