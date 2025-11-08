@@ -41,6 +41,10 @@ export function FloorPlanViewer3D({
   const [visibleObjects, setVisibleObjects] = useState<Set<string>>(new Set());
   const [showRooms, setShowRooms] = useState(true);
   const [showWalls, setShowWalls] = useState(true);
+  const [showExteriorWalls, setShowExteriorWalls] = useState(true);
+
+  // Hover state
+  const [hoveredObject, setHoveredObject] = useState<string | null>(null);
 
   // Load all required data
   useEffect(() => {
@@ -78,7 +82,84 @@ export function FloorPlanViewer3D({
         wallsData = data;
       } else if (data.room === 1) {
         const color = ROOM_COLORS[roomColorIndex % ROOM_COLORS.length];
-        roomsList.push({ name, data, color });
+
+        // Helper function to check if an object is within a space rectangle
+        const isWithinSpace = (obj: any, space: any) => {
+          const objCenterX = obj.x + obj.width / 2;
+          const objCenterY = obj.y + obj.height / 2;
+          return (
+            objCenterX >= space.x &&
+            objCenterX <= space.x + space.width &&
+            objCenterY >= space.y &&
+            objCenterY <= space.y + space.height
+          );
+        };
+
+        // Special handling for rooms with multiple space rectangles
+        if (name === 'teamMeetings') {
+          // Extract nested sub-areas as separate rooms
+          Object.entries(data).forEach(([subKey, subValue]) => {
+            if (subKey !== 'room' && typeof subValue === 'object' && subValue !== null && 'space' in subValue) {
+              const subRoomData = subValue as any;
+
+              // Check if we need to split this further based on space rectangles
+              // small: 4 independent rooms, square4: 3 independent rooms, round4: 1 room
+              if ((subKey === 'small' || subKey === 'square4') && Array.isArray(subRoomData.space) && subRoomData.space.length > 1) {
+                // Split each space rectangle into its own room
+                subRoomData.space.forEach((spaceRect: any, index: number) => {
+                  const individualRoomName = `${name}-${subKey}-${index}`;
+
+                  // Filter chairs and tables based on coordinates within this space
+                  const chairsInSpace = subRoomData.chairs
+                    ? subRoomData.chairs.filter((chair: any) => isWithinSpace(chair, spaceRect))
+                    : [];
+
+                  const tablesInSpace = subRoomData.tables
+                    ? subRoomData.tables.filter((table: any) => isWithinSpace(table, spaceRect))
+                    : [];
+
+                  const individualRoomData = {
+                    space: [spaceRect],
+                    room: 1,
+                    ...(chairsInSpace.length > 0 && { chairs: chairsInSpace }),
+                    ...(tablesInSpace.length > 0 && { tables: tablesInSpace })
+                  };
+                  roomsList.push({ name: individualRoomName, data: individualRoomData, color });
+                });
+              } else {
+                // Keep as single room (like round4)
+                const subRoomName = `${name}-${subKey}`;
+                const subRoomDataWithRoom = { ...subRoomData, room: 1 };
+                roomsList.push({ name: subRoomName, data: subRoomDataWithRoom, color });
+              }
+            }
+          });
+        } else if (name === 'managementRoom' && Array.isArray(data.space) && data.space.length > 1) {
+          // Split managementRoom into individual rooms (3 rooms)
+          data.space.forEach((spaceRect: any, index: number) => {
+            const individualRoomName = `${name}-${index}`;
+
+            // Filter chairs and tables based on coordinates within this space
+            const chairsInSpace = data.chairs
+              ? data.chairs.filter((chair: any) => isWithinSpace(chair, spaceRect))
+              : [];
+
+            const tablesInSpace = data.tables
+              ? data.tables.filter((table: any) => isWithinSpace(table, spaceRect))
+              : [];
+
+            const individualRoomData = {
+              space: [spaceRect],
+              room: 1,
+              ...(chairsInSpace.length > 0 && { chairs: chairsInSpace }),
+              ...(tablesInSpace.length > 0 && { tables: tablesInSpace })
+            };
+            roomsList.push({ name: individualRoomName, data: individualRoomData, color });
+          });
+        } else {
+          roomsList.push({ name, data, color });
+        }
+
         roomColorIndex++;
       } else {
         objectsList.push({ name, data });
@@ -183,18 +264,28 @@ export function FloorPlanViewer3D({
           )}
 
           {/* Render Walls */}
-          {showWalls && walls && (
+          {walls && (
             <Suspense fallback={null}>
-              <WallsRenderer walls={walls} meshConfig={meshConfig} />
+              <WallsRenderer
+                walls={walls}
+                meshConfig={meshConfig}
+                showInterior={showWalls}
+                showExterior={showExteriorWalls}
+              />
             </Suspense>
           )}
 
           {/* Render Rooms as Floor Rectangles */}
-          {showRooms && (
-            <Suspense fallback={null}>
-              <RoomFloors rooms={rooms} visibleObjects={visibleObjects} onRoomClick={onObjectClick} selectedObject={selectedObject} />
-            </Suspense>
-          )}
+          <Suspense fallback={null}>
+            <RoomFloors
+              rooms={rooms}
+              visibleObjects={visibleObjects}
+              onRoomClick={onObjectClick}
+              selectedObject={selectedObject}
+              hoveredObject={hoveredObject}
+              onHover={setHoveredObject}
+            />
+          </Suspense>
 
           {/* Render Objects */}
           <Suspense fallback={null}>
@@ -204,6 +295,8 @@ export function FloorPlanViewer3D({
               visibleObjects={visibleObjects}
               onObjectClick={onObjectClick}
               selectedObject={selectedObject}
+              hoveredObject={hoveredObject}
+              onHover={setHoveredObject}
             />
           </Suspense>
 
@@ -244,47 +337,52 @@ export function FloorPlanViewer3D({
         <div className="p-4">
           <h2 className="text-lg font-bold mb-4">Filters</h2>
 
-          {/* Walls Toggle */}
-          <div className="mb-6">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="font-semibold text-sm text-gray-700">Walls</h3>
-              <button
-                onClick={() => setShowWalls(!showWalls)}
-                className={`text-xs px-3 py-1 rounded ${
-                  showWalls ? 'bg-green-100 hover:bg-green-200' : 'bg-gray-100 hover:bg-gray-200'
-                }`}
-              >
-                {showWalls ? 'Hide' : 'Show'}
-              </button>
-            </div>
-          </div>
-
           {/* Rooms Section */}
           <div className="mb-6">
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-semibold text-sm text-gray-700">Rooms ({rooms.length})</h3>
               <button
-                onClick={() => setShowRooms(!showRooms)}
+                onClick={() => {
+                  const newShowRooms = !showRooms;
+                  setShowRooms(newShowRooms);
+                  // Update all room visibilities when toggling show/hide all
+                  if (newShowRooms) {
+                    // Show all rooms
+                    toggleAllOfType(rooms.map(r => r.name), true);
+                  } else {
+                    // Hide all rooms
+                    toggleAllOfType(rooms.map(r => r.name), false);
+                  }
+                }}
                 className="text-xs px-2 py-1 rounded bg-blue-100 hover:bg-blue-200"
               >
                 {showRooms ? 'Hide All' : 'Show All'}
               </button>
             </div>
-            <div className="space-y-1 max-h-48 overflow-y-auto">
-              {rooms.map(({ name }) => (
-                <label
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {rooms.map(({ name, color }) => (
+                <div
                   key={name}
-                  className="flex items-center justify-between p-2 hover:bg-gray-50 rounded cursor-pointer"
+                  className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
                 >
-                  <span className="text-sm text-gray-700 truncate flex-1">{name}</span>
-                  <input
-                    type="checkbox"
-                    checked={visibleObjects.has(name) && showRooms}
-                    onChange={() => toggleObject(name)}
-                    disabled={!showRooms}
-                    className="ml-2"
-                  />
-                </label>
+                  <div className="flex items-center gap-2 flex-1">
+                    <div
+                      className="w-4 h-4 rounded"
+                      style={{ backgroundColor: color }}
+                    />
+                    <span className="text-sm text-gray-700 truncate">{name}</span>
+                  </div>
+                  <button
+                    onClick={() => toggleObject(name)}
+                    className={`text-xs px-3 py-1 rounded ${
+                      visibleObjects.has(name)
+                        ? 'bg-green-100 hover:bg-green-200'
+                        : 'bg-gray-100 hover:bg-gray-200'
+                    }`}
+                  >
+                    {visibleObjects.has(name) ? 'Hide' : 'Show'}
+                  </button>
+                </div>
               ))}
             </div>
           </div>
@@ -292,17 +390,25 @@ export function FloorPlanViewer3D({
           {/* Objects Section */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <h3 className="font-semibold text-sm text-gray-700">Objects ({objects.length})</h3>
+              <h3 className="font-semibold text-sm text-gray-700">Objects ({objects.length + 2})</h3>
               <div className="flex gap-1">
                 <button
-                  onClick={() => toggleAllOfType(objects.map(o => o.name), true)}
+                  onClick={() => {
+                    setShowWalls(true);
+                    setShowExteriorWalls(true);
+                    toggleAllOfType(objects.map(o => o.name), true);
+                  }}
                   className="text-xs px-2 py-1 rounded bg-green-100 hover:bg-green-200"
                   title="Show all objects"
                 >
                   <Check className="w-3 h-3" />
                 </button>
                 <button
-                  onClick={() => toggleAllOfType(objects.map(o => o.name), false)}
+                  onClick={() => {
+                    setShowWalls(false);
+                    setShowExteriorWalls(false);
+                    toggleAllOfType(objects.map(o => o.name), false);
+                  }}
                   className="text-xs px-2 py-1 rounded bg-red-100 hover:bg-red-200"
                   title="Hide all objects"
                 >
@@ -311,6 +417,33 @@ export function FloorPlanViewer3D({
               </div>
             </div>
             <div className="space-y-1 max-h-96 overflow-y-auto">
+              {/* Interior Walls */}
+              <div className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
+                <span className="text-sm text-gray-700 truncate flex-1">Interior Walls</span>
+                <button
+                  onClick={() => setShowWalls(!showWalls)}
+                  className={`text-xs px-3 py-1 rounded ${
+                    showWalls ? 'bg-green-100 hover:bg-green-200' : 'bg-gray-100 hover:bg-gray-200'
+                  }`}
+                >
+                  {showWalls ? 'Hide' : 'Show'}
+                </button>
+              </div>
+
+              {/* Exterior Walls */}
+              <div className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
+                <span className="text-sm text-gray-700 truncate flex-1">Exterior Walls</span>
+                <button
+                  onClick={() => setShowExteriorWalls(!showExteriorWalls)}
+                  className={`text-xs px-3 py-1 rounded ${
+                    showExteriorWalls ? 'bg-green-100 hover:bg-green-200' : 'bg-gray-100 hover:bg-gray-200'
+                  }`}
+                >
+                  {showExteriorWalls ? 'Hide' : 'Show'}
+                </button>
+              </div>
+
+              {/* Regular objects */}
               {objects.map(({ name }) => (
                 <label
                   key={name}
@@ -337,35 +470,53 @@ export function FloorPlanViewer3D({
 interface WallsRendererProps {
   walls: any;
   meshConfig: MeshConfiguration;
+  showInterior: boolean;
+  showExterior: boolean;
 }
 
-function WallsRenderer({ walls, meshConfig }: WallsRendererProps) {
+function WallsRenderer({ walls, meshConfig, showInterior, showExterior }: WallsRendererProps) {
   const scale = 0.05;
   const wallConfig = meshConfig.meshes.wall;
 
-  if (!walls || !walls.interior || !Array.isArray(walls.interior)) return null;
+  if (!walls) return null;
+
+  const renderWalls = (wallsArray: any[], keyPrefix: string) => {
+    if (!Array.isArray(wallsArray)) return null;
+
+    return wallsArray.map((rect: any, index: number) => {
+      const centerX = (rect.x + rect.width / 2) * scale;
+      const centerZ = (rect.y + rect.height / 2) * scale;
+      const width = rect.width * scale;
+      const depth = rect.height * scale;
+      const height = 4; // Wall height
+
+      return (
+        <mesh
+          key={`${keyPrefix}-${index}`}
+          position={[centerX, height / 2, centerZ]}
+          onPointerOver={(e) => {
+            e.stopPropagation();
+          }}
+          onPointerOut={(e) => {
+            e.stopPropagation();
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+          }}
+          castShadow
+          receiveShadow
+        >
+          <boxGeometry args={[width, height, depth]} />
+          <meshStandardMaterial color={wallConfig?.color || '#BDC3C7'} />
+        </mesh>
+      );
+    });
+  };
 
   return (
     <group>
-      {walls.interior.map((rect: any, index: number) => {
-        const centerX = (rect.x + rect.width / 2) * scale;
-        const centerZ = (rect.y + rect.height / 2) * scale;
-        const width = rect.width * scale;
-        const depth = rect.height * scale;
-        const height = 4; // Wall height
-
-        return (
-          <mesh
-            key={`wall-${index}`}
-            position={[centerX, height / 2, centerZ]}
-            castShadow
-            receiveShadow
-          >
-            <boxGeometry args={[width, height, depth]} />
-            <meshStandardMaterial color={wallConfig?.color || '#BDC3C7'} />
-          </mesh>
-        );
-      })}
+      {showInterior && walls.interior && renderWalls(walls.interior, 'wall-interior')}
+      {showExterior && walls.exterior && renderWalls(walls.exterior, 'wall-exterior')}
     </group>
   );
 }
@@ -376,9 +527,11 @@ interface RoomFloorsProps {
   visibleObjects: Set<string>;
   onRoomClick?: (objectName: string, objectType: string) => void;
   selectedObject?: string | null;
+  hoveredObject?: string | null;
+  onHover?: (objectName: string | null) => void;
 }
 
-function RoomFloors({ rooms, visibleObjects, onRoomClick, selectedObject }: RoomFloorsProps) {
+function RoomFloors({ rooms, visibleObjects, onRoomClick, selectedObject, hoveredObject, onHover }: RoomFloorsProps) {
   const scale = 0.05; // Scale factor for converting coordinates
 
   // Helper function to render furniture (tables/chairs) for a room or sub-area
@@ -403,7 +556,16 @@ function RoomFloors({ rooms, visibleObjects, onRoomClick, selectedObject }: Room
           <mesh
             key={`${keyPrefix}-table-${index}`}
             position={[centerX, height / 2, centerZ]}
-            onClick={() => onRoomClick?.(name, 'table')}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRoomClick?.(name, 'table');
+            }}
+            onPointerOver={(e) => {
+              e.stopPropagation();
+            }}
+            onPointerOut={(e) => {
+              e.stopPropagation();
+            }}
             castShadow
             receiveShadow
           >
@@ -431,15 +593,12 @@ function RoomFloors({ rooms, visibleObjects, onRoomClick, selectedObject }: Room
           <mesh
             key={`${keyPrefix}-chair-${index}`}
             position={[centerX, height / 2, centerZ]}
-            onClick={() => onRoomClick?.(name, 'chair')}
             castShadow
             receiveShadow
           >
             <boxGeometry args={[width, height, depth]} />
             <meshStandardMaterial
               color="#FFD93D"
-              emissive={isSelected ? '#FFD93D' : '#000000'}
-              emissiveIntensity={isSelected ? 0.3 : 0}
             />
           </mesh>
         );
@@ -449,63 +608,6 @@ function RoomFloors({ rooms, visibleObjects, onRoomClick, selectedObject }: Room
     return furniture;
   };
 
-  // Helper function to render nested sub-areas within a room
-  const renderNestedAreas = (
-    roomName: string,
-    data: any,
-    color: string,
-    isSelected: boolean
-  ) => {
-    const nestedElements: JSX.Element[] = [];
-
-    // Check each property for nested objects (like teamMeetings.small, teamMeetings.round4, etc.)
-    Object.entries(data).forEach(([key, value]) => {
-      // Skip known properties that are not nested areas
-      if (key === 'space' || key === 'tables' || key === 'chairs' || key === 'room' || key === 'couch') {
-        return;
-      }
-
-      // If it's a nested object with space property, render it
-      if (typeof value === 'object' && value !== null && 'space' in value) {
-        const nestedData = value as any;
-
-        // Render nested area floors
-        if (nestedData.space && Array.isArray(nestedData.space)) {
-          nestedData.space.forEach((rect: Rectangle, index: number) => {
-            const centerX = (rect.x + rect.width / 2) * scale;
-            const centerZ = (rect.y + rect.height / 2) * scale;
-            const width = rect.width * scale;
-            const depth = rect.height * scale;
-
-            nestedElements.push(
-              <mesh
-                key={`${roomName}-${key}-floor-${index}`}
-                position={[centerX, 0.1, centerZ]}
-                rotation={[-Math.PI / 2, 0, 0]}
-                onClick={() => onRoomClick?.(roomName, 'room')}
-                receiveShadow
-              >
-                <planeGeometry args={[width, depth]} />
-                <meshStandardMaterial
-                  color={color}
-                  opacity={isSelected ? 0.9 : 0.7}
-                  transparent
-                  side={THREE.DoubleSide}
-                  emissive={isSelected ? color : '#000000'}
-                  emissiveIntensity={isSelected ? 0.3 : 0}
-                />
-              </mesh>
-            );
-          });
-        }
-
-        // Render furniture in nested areas
-        nestedElements.push(...renderFurniture(roomName, nestedData, isSelected, `${roomName}-${key}`));
-      }
-    });
-
-    return nestedElements;
-  };
 
   return (
     <group>
@@ -513,6 +615,7 @@ function RoomFloors({ rooms, visibleObjects, onRoomClick, selectedObject }: Room
         if (!visibleObjects.has(name)) return null;
 
         const isSelected = selectedObject === name;
+        const isHovered = hoveredObject === name;
         const hasMainSpace = data.space && Array.isArray(data.space) && data.space.length > 0;
 
         return (
@@ -529,17 +632,30 @@ function RoomFloors({ rooms, visibleObjects, onRoomClick, selectedObject }: Room
                   key={`${name}-floor-${rectIndex}`}
                   position={[centerX, 0.1, centerZ]}
                   rotation={[-Math.PI / 2, 0, 0]}
-                  onClick={() => onRoomClick?.(name, 'room')}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRoomClick?.(name, 'room');
+                  }}
+                  onPointerOver={(e) => {
+                    e.stopPropagation();
+                    onHover?.(name);
+                    document.body.style.cursor = 'pointer';
+                  }}
+                  onPointerOut={(e) => {
+                    e.stopPropagation();
+                    onHover?.(null);
+                    document.body.style.cursor = 'default';
+                  }}
                   receiveShadow
                 >
                   <planeGeometry args={[width, depth]} />
                   <meshStandardMaterial
                     color={color}
-                    opacity={isSelected ? 0.9 : 0.7}
+                    opacity={isSelected ? 0.9 : isHovered ? 0.8 : 0.7}
                     transparent
                     side={THREE.DoubleSide}
-                    emissive={isSelected ? color : '#000000'}
-                    emissiveIntensity={isSelected ? 0.3 : 0}
+                    emissive={isSelected ? color : isHovered ? color : '#000000'}
+                    emissiveIntensity={isSelected ? 0.3 : isHovered ? 0.15 : 0}
                   />
                 </mesh>
               );
@@ -547,9 +663,6 @@ function RoomFloors({ rooms, visibleObjects, onRoomClick, selectedObject }: Room
 
             {/* Render furniture in main room */}
             {renderFurniture(name, data, isSelected, name)}
-
-            {/* Render nested sub-areas (like teamMeetings.small, teamMeetings.round4, etc.) */}
-            {renderNestedAreas(name, data, color, isSelected)}
           </group>
         );
       })}
@@ -564,6 +677,8 @@ interface FloorPlanObjectsProps {
   visibleObjects: Set<string>;
   onObjectClick?: (objectName: string, objectType: string) => void;
   selectedObject?: string | null;
+  hoveredObject?: string | null;
+  onHover?: (objectName: string | null) => void;
 }
 
 function FloorPlanObjects({
@@ -572,6 +687,8 @@ function FloorPlanObjects({
   visibleObjects,
   onObjectClick,
   selectedObject,
+  hoveredObject,
+  onHover,
 }: FloorPlanObjectsProps) {
   const scale = 0.05; // Scale factor for converting coordinates
 
@@ -598,6 +715,7 @@ function FloorPlanObjects({
         if (!data.space || !Array.isArray(data.space) || data.space.length === 0) return null;
 
         const isSelected = selectedObject === name;
+        const isHovered = hoveredObject === name;
         const meshType = getMeshType(name);
         const config = meshConfig.meshes[meshType];
 
@@ -621,19 +739,37 @@ function FloorPlanObjects({
               else if (meshType === 'table') height = 1.5;
               else if (meshType === 'chair') height = 1.0;
 
+              // Create unique identifier for this individual desk
+              const individualId = `${name}-${index}`;
+              const isIndividualSelected = selectedObject === individualId;
+              const isIndividualHovered = hoveredObject === individualId;
+
               return (
                 <mesh
                   key={`${name}-space-${index}`}
                   position={[centerX, height / 2, centerZ]}
-                  onClick={() => onObjectClick?.(name, meshType)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onObjectClick?.(individualId, meshType);
+                  }}
+                  onPointerOver={(e) => {
+                    e.stopPropagation();
+                    onHover?.(individualId);
+                    document.body.style.cursor = 'pointer';
+                  }}
+                  onPointerOut={(e) => {
+                    e.stopPropagation();
+                    onHover?.(null);
+                    document.body.style.cursor = 'default';
+                  }}
                   castShadow
                   receiveShadow
                 >
                   <boxGeometry args={[width, height, depth]} />
                   <meshStandardMaterial
                     color={config.color}
-                    emissive={isSelected ? config.color : '#000000'}
-                    emissiveIntensity={isSelected ? 0.3 : 0}
+                    emissive={isIndividualSelected ? config.color : isIndividualHovered ? config.color : '#000000'}
+                    emissiveIntensity={isIndividualSelected ? 0.3 : isIndividualHovered ? 0.15 : 0}
                   />
                 </mesh>
               );
@@ -654,15 +790,12 @@ function FloorPlanObjects({
                 <mesh
                   key={`${name}-chair-${index}`}
                   position={[centerX, height / 2, centerZ]}
-                  onClick={() => onObjectClick?.(name, 'chair')}
                   castShadow
                   receiveShadow
                 >
                   <boxGeometry args={[width, height, depth]} />
                   <meshStandardMaterial
                     color={chairConfig.color}
-                    emissive={isSelected ? chairConfig.color : '#000000'}
-                    emissiveIntensity={isSelected ? 0.3 : 0}
                   />
                 </mesh>
               );
@@ -683,7 +816,16 @@ function FloorPlanObjects({
                 <mesh
                   key={`${name}-table-${index}`}
                   position={[centerX, height / 2, centerZ]}
-                  onClick={() => onObjectClick?.(name, 'table')}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onObjectClick?.(name, 'table');
+                  }}
+                  onPointerOver={(e) => {
+                    e.stopPropagation();
+                  }}
+                  onPointerOut={(e) => {
+                    e.stopPropagation();
+                  }}
                   castShadow
                   receiveShadow
                 >

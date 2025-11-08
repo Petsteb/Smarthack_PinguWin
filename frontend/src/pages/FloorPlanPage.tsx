@@ -60,7 +60,110 @@ export default function FloorPlanPage() {
     );
   }
 
-  const selectedObjectData = selectedObject && floorData ? floorData[selectedObject] : null;
+  // Handle both direct object names, individual desk IDs (e.g., "desks1-0"), and teamMeetings sub-rooms
+  const getSelectedObjectData = () => {
+    if (!selectedObject || !floorData) return null;
+
+    // First try direct lookup
+    if (floorData[selectedObject]) {
+      return floorData[selectedObject];
+    }
+
+    // Helper function to check if an object is within a space rectangle
+    const isWithinSpace = (obj: any, space: any) => {
+      const objCenterX = obj.x + obj.width / 2;
+      const objCenterY = obj.y + obj.height / 2;
+      return (
+        objCenterX >= space.x &&
+        objCenterX <= space.x + space.width &&
+        objCenterY >= space.y &&
+        objCenterY <= space.y + space.height
+      );
+    };
+
+    // Check if it's a managementRoom individual room (e.g., "managementRoom-0")
+    if (selectedObject.startsWith('managementRoom-')) {
+      const index = parseInt(selectedObject.replace('managementRoom-', ''));
+      const managementRoomData = floorData['managementRoom'];
+
+      if (managementRoomData && Array.isArray(managementRoomData.space) && managementRoomData.space[index]) {
+        const spaceRect = managementRoomData.space[index];
+
+        // Filter chairs and tables based on coordinates within this space
+        const chairsInSpace = managementRoomData.chairs
+          ? managementRoomData.chairs.filter((chair: any) => isWithinSpace(chair, spaceRect))
+          : [];
+
+        const tablesInSpace = managementRoomData.tables
+          ? managementRoomData.tables.filter((table: any) => isWithinSpace(table, spaceRect))
+          : [];
+
+        return {
+          space: [spaceRect],
+          room: 1,
+          ...(chairsInSpace.length > 0 && { chairs: chairsInSpace }),
+          ...(tablesInSpace.length > 0 && { tables: tablesInSpace })
+        };
+      }
+    }
+
+    // Check if it's a teamMeetings sub-room (e.g., "teamMeetings-small" or "teamMeetings-small-0")
+    if (selectedObject.startsWith('teamMeetings-')) {
+      const parts = selectedObject.replace('teamMeetings-', '').split('-');
+      const teamMeetingsData = floorData['teamMeetings'];
+
+      if (teamMeetingsData && typeof teamMeetingsData === 'object') {
+        // Check for individual rooms like "teamMeetings-small-0"
+        if (parts.length === 2) {
+          const subKey = parts[0]; // e.g., "small"
+          const index = parseInt(parts[1]); // e.g., 0
+          const subRoomData = (teamMeetingsData as any)[subKey];
+
+          if (subRoomData && Array.isArray(subRoomData.space) && subRoomData.space[index]) {
+            const spaceRect = subRoomData.space[index];
+
+            // Filter chairs and tables based on coordinates within this space
+            const chairsInSpace = subRoomData.chairs
+              ? subRoomData.chairs.filter((chair: any) => isWithinSpace(chair, spaceRect))
+              : [];
+
+            const tablesInSpace = subRoomData.tables
+              ? subRoomData.tables.filter((table: any) => isWithinSpace(table, spaceRect))
+              : [];
+
+            // Return just this individual space rectangle with filtered furniture
+            return {
+              space: [spaceRect],
+              room: 1,
+              ...(chairsInSpace.length > 0 && { chairs: chairsInSpace }),
+              ...(tablesInSpace.length > 0 && { tables: tablesInSpace })
+            };
+          }
+        } else {
+          // Single sub-room like "teamMeetings-round4"
+          const subKey = parts[0];
+          const subRoomData = (teamMeetingsData as any)[subKey];
+          if (subRoomData) {
+            return { ...subRoomData, room: 1 };
+          }
+        }
+      }
+    }
+
+    // If not found, it might be an individual desk ID like "desks1-0"
+    // Extract the base name by removing the last "-{number}" suffix
+    const match = selectedObject.match(/^(.+)-\d+$/);
+    if (match) {
+      const baseName = match[1];
+      if (floorData[baseName]) {
+        return floorData[baseName];
+      }
+    }
+
+    return null;
+  };
+
+  const selectedObjectData = getSelectedObjectData();
 
   return (
     <div className="h-screen flex flex-col bg-gray-100">
@@ -125,19 +228,21 @@ export default function FloorPlanPage() {
                 </p>
               </div>
 
-              <div>
-                <label className="text-sm font-semibold text-gray-600">Space Rectangles</label>
-                <p className="text-gray-900">{selectedObjectData.space.length} rectangle(s)</p>
-                <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
-                  {selectedObjectData.space.map((rect, index) => (
-                    <div key={index} className="text-xs bg-gray-50 p-2 rounded">
-                      <span className="font-mono">
-                        x: {rect.x.toFixed(1)}, y: {rect.y.toFixed(1)}, w: {rect.width.toFixed(1)}, h: {rect.height.toFixed(1)}
-                      </span>
-                    </div>
-                  ))}
+              {selectedObjectData.space && selectedObjectData.space.length > 0 && (
+                <div>
+                  <label className="text-sm font-semibold text-gray-600">Space Rectangles</label>
+                  <p className="text-gray-900">{selectedObjectData.space.length} rectangle(s)</p>
+                  <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
+                    {selectedObjectData.space.map((rect, index) => (
+                      <div key={index} className="text-xs bg-gray-50 p-2 rounded">
+                        <span className="font-mono">
+                          x: {rect.x.toFixed(1)}, y: {rect.y.toFixed(1)}, w: {rect.width.toFixed(1)}, h: {rect.height.toFixed(1)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {selectedObjectData.chairs && selectedObjectData.chairs.length > 0 && (
                 <div>

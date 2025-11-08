@@ -15,7 +15,8 @@
       "Bash(dir \"C:\\Users\\petst\\OneDrive\\Desktop\\SH PinguWin\\Smarthack_PinguWin\\frontend\\public\\assets\\meshes\")",
       "Bash(npm run dev:*)",
       "Bash(python -c:*)",
-      "Bash(dir \"C:\\Users\\petst\\OneDrive\\Desktop\\SH PinguWin\\Smarthack_PinguWin\")"
+      "Bash(dir \"C:\\Users\\petst\\OneDrive\\Desktop\\SH PinguWin\\Smarthack_PinguWin\")",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []
