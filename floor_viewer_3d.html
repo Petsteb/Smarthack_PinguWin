@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Floor Plan Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            background: #1e1e1e;
+            color: #fff;
+        }
+
+        #sidebar {
+            width: 320px;
+            background: #2d2d2d;
+            padding: 20px;
+            overflow-y: auto;
+            border-right: 1px solid #444;
+        }
+
+        #viewer-container {
+            flex: 1;
+            position: relative;
+        }
+
+        #controls {
+            margin-bottom: 20px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #aaa;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+
+        input[type="text"], select, input[type="file"] {
+            width: 100%;
+            padding: 8px;
+            background: #1e1e1e;
+            border: 1px solid #444;
+            color: #fff;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        input[type="text"]:focus, select:focus {
+            outline: none;
+            border-color: #007acc;
+        }
+
+        button {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            background: #007acc;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #005a9e;
+        }
+
+        button.secondary {
+            background: #3e3e3e;
+        }
+
+        button.secondary:hover {
+            background: #4e4e4e;
+        }
+
+        h2 {
+            margin-bottom: 15px;
+            color: #fff;
+            font-size: 18px;
+        }
+
+        h3 {
+            margin-top: 20px;
+            margin-bottom: 10px;
+            color: #aaa;
+            font-size: 14px;
+            text-transform: uppercase;
+        }
+
+        .filter-section {
+            background: #1e1e1e;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+
+        .checkbox-group {
+            margin-bottom: 10px;
+        }
+
+        .checkbox-group label {
+            display: flex;
+            align-items: center;
+            font-size: 14px;
+            text-transform: none;
+            cursor: pointer;
+            padding: 5px 0;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            margin-right: 10px;
+            width: auto;
+        }
+
+        .stats {
+            background: #1e1e1e;
+            padding: 15px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .stats p {
+            margin-bottom: 5px;
+            color: #aaa;
+        }
+
+        .stats strong {
+            color: #fff;
+        }
+
+        .help-text {
+            font-size: 11px;
+            color: #888;
+            margin-top: 10px;
+            line-height: 1.4;
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #fff;
+            font-size: 18px;
+        }
+
+        .color-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 2px;
+            margin-right: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <h2>3D Floor Plan Viewer</h2>
+
+        <div id="controls">
+            <div class="control-group">
+                <label>Load Floor Plan Data</label>
+                <input type="file" id="file-input" accept=".json">
+            </div>
+
+            <button id="reset-camera" class="secondary">Reset Camera</button>
+            <button id="toggle-wireframe" class="secondary">Toggle Wireframe</button>
+
+            <div class="help-text">
+                Use mouse to rotate view (left click + drag)<br>
+                Zoom with scroll wheel<br>
+                Pan with right click + drag
+            </div>
+        </div>
+
+        <div class="filter-section">
+            <h3>Filter by Type</h3>
+            <div id="type-filters">
+                <div class="checkbox-group">
+                    <label>
+                        <input type="checkbox" value="room" checked>
+                        <span class="color-indicator" style="background: #4ec9b0"></span>
+                        Rooms
+                    </label>
+                </div>
+                <div class="checkbox-group">
+                    <label>
+                        <input type="checkbox" value="chair" checked>
+                        <span class="color-indicator" style="background: #dcdcaa"></span>
+                        Chairs
+                    </label>
+                </div>
+                <div class="checkbox-group">
+                    <label>
+                        <input type="checkbox" value="desk" checked>
+                        <span class="color-indicator" style="background: #ce9178"></span>
+                        Desks
+                    </label>
+                </div>
+                <div class="checkbox-group">
+                    <label>
+                        <input type="checkbox" value="table" checked>
+                        <span class="color-indicator" style="background: #c586c0"></span>
+                        Tables
+                    </label>
+                </div>
+                <div class="checkbox-group">
+                    <label>
+                        <input type="checkbox" value="wall" checked>
+                        <span class="color-indicator" style="background: #808080"></span>
+                        Walls
+                    </label>
+                </div>
+                <div class="checkbox-group">
+                    <label>
+                        <input type="checkbox" value="door" checked>
+                        <span class="color-indicator" style="background: #569cd6"></span>
+                        Doors
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <div class="filter-section">
+            <h3>Filter by Name</h3>
+            <div class="control-group">
+                <input type="text" id="name-filter" placeholder="Search by name...">
+            </div>
+        </div>
+
+        <div class="filter-section">
+            <h3>Filter by Room</h3>
+            <div class="control-group">
+                <select id="room-filter">
+                    <option value="">All Rooms</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="stats" id="stats">
+            <h3>Statistics</h3>
+            <p>Total Objects: <strong id="total-objects">0</strong></p>
+            <p>Visible Objects: <strong id="visible-objects">0</strong></p>
+            <p>Rooms: <strong id="room-count">0</strong></p>
+        </div>
+    </div>
+
+    <div id="viewer-container">
+        <div id="loading">Loading 3D Scene...</div>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+        // Scene setup
+        const container = document.getElementById('viewer-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1e1e1e);
+
+        const camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 10000);
+        camera.position.set(0, 500, 500);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        container.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(100, 200, 100);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 2048;
+        directionalLight.shadow.mapSize.height = 2048;
+        scene.add(directionalLight);
+
+        // Grid helper
+        const gridHelper = new THREE.GridHelper(2000, 50, 0x444444, 0x222222);
+        scene.add(gridHelper);
+
+        // State
+        let floorData = null;
+        let objectMeshes = [];
+        let wireframeMode = false;
+
+        // 3D Model URLs (using free models from various sources)
+        const modelUrls = {
+            chair: 'https://threejs.org/examples/models/gltf/office_chair/scene.gltf',
+            desk: null, // Will create procedural geometry
+            table: null, // Will create procedural geometry
+            wall: null, // Will create procedural geometry
+            door: null  // Will create procedural geometry
+        };
+
+        // Color scheme
+        const colors = {
+            room: 0x4ec9b0,
+            chair: 0xdcdcaa,
+            desk: 0xce9178,
+            table: 0xc586c0,
+            wall: 0x808080,
+            door: 0x569cd6
+        };
+
+        // Event Listeners
+        document.getElementById('file-input').addEventListener('change', handleFileUpload);
+        document.getElementById('reset-camera').addEventListener('click', resetCamera);
+        document.getElementById('toggle-wireframe').addEventListener('click', toggleWireframe);
+        document.getElementById('name-filter').addEventListener('input', applyFilters);
+        document.getElementById('room-filter').addEventListener('change', applyFilters);
+
+        document.querySelectorAll('#type-filters input[type="checkbox"]').forEach(checkbox => {
+            checkbox.addEventListener('change', applyFilters);
+        });
+
+        window.addEventListener('resize', onWindowResize);
+
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    floorData = JSON.parse(e.target.result);
+                    loadFloorPlan();
+                } catch (error) {
+                    alert('Error parsing JSON file: ' + error.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function loadFloorPlan() {
+            // Clear existing meshes
+            objectMeshes.forEach(obj => {
+                scene.remove(obj.mesh);
+            });
+            objectMeshes = [];
+
+            // Find the scale factor (SVG coordinates to 3D world)
+            let maxX = 0, maxY = 0;
+            [...floorData.rooms, ...floorData.objects].forEach(item => {
+                if (item.bounds) {
+                    maxX = Math.max(maxX, item.bounds.maxX);
+                    maxY = Math.max(maxY, item.bounds.maxY);
+                }
+            });
+
+            const scale = 1000 / Math.max(maxX, maxY);
+
+            // Create rooms (as floor polygons)
+            floorData.rooms.forEach(room => {
+                createRoom(room, scale);
+            });
+
+            // Create objects
+            floorData.objects.forEach(obj => {
+                createObject(obj, scale);
+            });
+
+            // Update room filter dropdown
+            updateRoomFilter();
+
+            // Update stats
+            updateStats();
+
+            // Position camera to view the entire floor
+            const centerX = (maxX / 2) * scale;
+            const centerY = (maxY / 2) * scale;
+            camera.position.set(centerX, Math.max(maxX, maxY) * scale * 0.8, centerY + Math.max(maxX, maxY) * scale * 0.5);
+            controls.target.set(centerX, 0, centerY);
+            controls.update();
+
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        function createRoom(room, scale) {
+            // Create floor polygon
+            const shape = new THREE.Shape();
+            room.polygon.forEach((point, index) => {
+                const x = point.x * scale;
+                const y = -point.y * scale; // Invert Y for 3D
+
+                if (index === 0) {
+                    shape.moveTo(x, y);
+                } else {
+                    shape.lineTo(x, y);
+                }
+            });
+
+            const geometry = new THREE.ShapeGeometry(shape);
+            const material = new THREE.MeshStandardMaterial({
+                color: colors.room,
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.3
+            });
+
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.rotation.x = -Math.PI / 2;
+            mesh.receiveShadow = true;
+
+            scene.add(mesh);
+
+            objectMeshes.push({
+                mesh,
+                data: room,
+                type: 'room'
+            });
+
+            // Add room label
+            createLabel(room.name, room.bounds, scale, colors.room);
+        }
+
+        function createObject(obj, scale) {
+            const bounds = obj.bounds;
+            const centerX = bounds.centerX * scale;
+            const centerZ = -bounds.centerY * scale;
+            const width = bounds.width * scale;
+            const depth = bounds.height * scale;
+
+            let mesh;
+
+            switch (obj.type) {
+                case 'chair':
+                    mesh = createChair(width, depth);
+                    break;
+                case 'desk':
+                    mesh = createDesk(width, depth);
+                    break;
+                case 'table':
+                    mesh = createTable(width, depth);
+                    break;
+                case 'wall':
+                    mesh = createWall(obj.polygon, scale);
+                    break;
+                case 'door':
+                    mesh = createDoor(width, depth);
+                    break;
+                default:
+                    mesh = createGenericBox(width, depth, colors[obj.type] || 0xffffff);
+            }
+
+            if (obj.type !== 'wall') {
+                mesh.position.set(centerX, 0, centerZ);
+            }
+
+            scene.add(mesh);
+
+            objectMeshes.push({
+                mesh,
+                data: obj,
+                type: obj.type
+            });
+        }
+
+        function createChair(width, depth) {
+            const group = new THREE.Group();
+
+            // Seat
+            const seatGeometry = new THREE.BoxGeometry(Math.max(width, 10), 2, Math.max(depth * 0.7, 10));
+            const seatMaterial = new THREE.MeshStandardMaterial({ color: colors.chair });
+            const seat = new THREE.Mesh(seatGeometry, seatMaterial);
+            seat.position.y = 10;
+            seat.castShadow = true;
+            group.add(seat);
+
+            // Backrest
+            const backGeometry = new THREE.BoxGeometry(Math.max(width, 10), Math.max(depth * 0.5, 15), 2);
+            const back = new THREE.Mesh(backGeometry, seatMaterial);
+            back.position.y = 18;
+            back.position.z = -Math.max(depth * 0.35, 5);
+            back.castShadow = true;
+            group.add(back);
+
+            // Legs
+            const legGeometry = new THREE.CylinderGeometry(1, 1, 10, 8);
+            const positions = [
+                [-width/3, 0, -depth/4],
+                [width/3, 0, -depth/4],
+                [-width/3, 0, depth/4],
+                [width/3, 0, depth/4]
+            ];
+
+            positions.forEach(pos => {
+                const leg = new THREE.Mesh(legGeometry, seatMaterial);
+                leg.position.set(...pos);
+                leg.castShadow = true;
+                group.add(leg);
+            });
+
+            return group;
+        }
+
+        function createDesk(width, depth) {
+            const group = new THREE.Group();
+
+            // Desktop
+            const topGeometry = new THREE.BoxGeometry(Math.max(width, 20), 3, Math.max(depth, 15));
+            const topMaterial = new THREE.MeshStandardMaterial({ color: colors.desk });
+            const top = new THREE.Mesh(topGeometry, topMaterial);
+            top.position.y = 18;
+            top.castShadow = true;
+            group.add(top);
+
+            // Legs
+            const legGeometry = new THREE.BoxGeometry(3, 18, 3);
+            const positions = [
+                [-width/2 + 3, 9, -depth/2 + 3],
+                [width/2 - 3, 9, -depth/2 + 3],
+                [-width/2 + 3, 9, depth/2 - 3],
+                [width/2 - 3, 9, depth/2 - 3]
+            ];
+
+            positions.forEach(pos => {
+                const leg = new THREE.Mesh(legGeometry, topMaterial);
+                leg.position.set(...pos);
+                leg.castShadow = true;
+                group.add(leg);
+            });
+
+            return group;
+        }
+
+        function createTable(width, depth) {
+            const group = new THREE.Group();
+
+            // Tabletop
+            const topGeometry = new THREE.BoxGeometry(Math.max(width, 20), 2, Math.max(depth, 20));
+            const topMaterial = new THREE.MeshStandardMaterial({ color: colors.table });
+            const top = new THREE.Mesh(topGeometry, topMaterial);
+            top.position.y = 20;
+            top.castShadow = true;
+            group.add(top);
+
+            // Legs
+            const legGeometry = new THREE.CylinderGeometry(2, 2, 20, 8);
+            const positions = [
+                [-width/2 + 5, 10, -depth/2 + 5],
+                [width/2 - 5, 10, -depth/2 + 5],
+                [-width/2 + 5, 10, depth/2 - 5],
+                [width/2 - 5, 10, depth/2 - 5]
+            ];
+
+            positions.forEach(pos => {
+                const leg = new THREE.Mesh(legGeometry, topMaterial);
+                leg.position.set(...pos);
+                leg.castShadow = true;
+                group.add(leg);
+            });
+
+            return group;
+        }
+
+        function createWall(polygon, scale) {
+            const shape = new THREE.Shape();
+            polygon.forEach((point, index) => {
+                const x = point.x * scale;
+                const y = -point.y * scale;
+
+                if (index === 0) {
+                    shape.moveTo(x, y);
+                } else {
+                    shape.lineTo(x, y);
+                }
+            });
+
+            const extrudeSettings = {
+                depth: 30,
+                bevelEnabled: false
+            };
+
+            const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+            const material = new THREE.MeshStandardMaterial({
+                color: colors.wall,
+                transparent: true,
+                opacity: 0.7
+            });
+
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.rotation.x = -Math.PI / 2;
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+
+            return mesh;
+        }
+
+        function createDoor(width, depth) {
+            const group = new THREE.Group();
+
+            // Door frame
+            const frameGeometry = new THREE.BoxGeometry(Math.max(width, 15), 40, 3);
+            const frameMaterial = new THREE.MeshStandardMaterial({ color: colors.door });
+            const frame = new THREE.Mesh(frameGeometry, frameMaterial);
+            frame.position.y = 20;
+            frame.castShadow = true;
+            group.add(frame);
+
+            return group;
+        }
+
+        function createGenericBox(width, depth, color) {
+            const geometry = new THREE.BoxGeometry(Math.max(width, 10), 10, Math.max(depth, 10));
+            const material = new THREE.MeshStandardMaterial({ color });
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.y = 5;
+            mesh.castShadow = true;
+            return mesh;
+        }
+
+        function createLabel(text, bounds, scale, color) {
+            // Create a simple sprite label using canvas
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.width = 256;
+            canvas.height = 64;
+
+            context.fillStyle = '#' + color.toString(16).padStart(6, '0');
+            context.font = 'Bold 24px Arial';
+            context.textAlign = 'center';
+            context.fillText(text, 128, 32);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
+            const sprite = new THREE.Sprite(material);
+
+            sprite.position.set(
+                bounds.centerX * scale,
+                2,
+                -bounds.centerY * scale
+            );
+            sprite.scale.set(50, 12.5, 1);
+
+            scene.add(sprite);
+        }
+
+        function updateRoomFilter() {
+            const select = document.getElementById('room-filter');
+            select.innerHTML = '<option value="">All Rooms</option>';
+
+            if (floorData && floorData.rooms) {
+                floorData.rooms.forEach(room => {
+                    const option = document.createElement('option');
+                    option.value = room.name;
+                    option.textContent = room.name;
+                    select.appendChild(option);
+                });
+            }
+        }
+
+        function applyFilters() {
+            const nameFilter = document.getElementById('name-filter').value.toLowerCase();
+            const roomFilter = document.getElementById('room-filter').value;
+            const typeFilters = Array.from(document.querySelectorAll('#type-filters input[type="checkbox"]:checked'))
+                .map(cb => cb.value);
+
+            let visibleCount = 0;
+
+            objectMeshes.forEach(obj => {
+                let visible = true;
+
+                // Type filter
+                if (!typeFilters.includes(obj.type)) {
+                    visible = false;
+                }
+
+                // Name filter
+                if (nameFilter && !obj.data.name.toLowerCase().includes(nameFilter)) {
+                    visible = false;
+                }
+
+                // Room filter
+                if (roomFilter && obj.type !== 'room') {
+                    if (obj.data.roomName !== roomFilter) {
+                        visible = false;
+                    }
+                }
+
+                obj.mesh.visible = visible;
+                if (visible) visibleCount++;
+            });
+
+            document.getElementById('visible-objects').textContent = visibleCount;
+        }
+
+        function updateStats() {
+            if (!floorData) return;
+
+            const totalObjects = floorData.rooms.length + floorData.objects.length;
+            document.getElementById('total-objects').textContent = totalObjects;
+            document.getElementById('visible-objects').textContent = totalObjects;
+            document.getElementById('room-count').textContent = floorData.rooms.length;
+        }
+
+        function resetCamera() {
+            if (!floorData) return;
+
+            let maxX = 0, maxY = 0;
+            [...floorData.rooms, ...floorData.objects].forEach(item => {
+                if (item.bounds) {
+                    maxX = Math.max(maxX, item.bounds.maxX);
+                    maxY = Math.max(maxY, item.bounds.maxY);
+                }
+            });
+
+            const scale = 1000 / Math.max(maxX, maxY);
+            const centerX = (maxX / 2) * scale;
+            const centerY = (maxY / 2) * scale;
+
+            camera.position.set(centerX, Math.max(maxX, maxY) * scale * 0.8, centerY + Math.max(maxX, maxY) * scale * 0.5);
+            controls.target.set(centerX, 0, centerY);
+            controls.update();
+        }
+
+        function toggleWireframe() {
+            wireframeMode = !wireframeMode;
+
+            objectMeshes.forEach(obj => {
+                obj.mesh.traverse((child) => {
+                    if (child.isMesh) {
+                        child.material.wireframe = wireframeMode;
+                    }
+                });
+            });
+        }
+
+        function onWindowResize() {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        animate();
+        document.getElementById('loading').textContent = 'Please load a floor plan data file';
+    </script>
+</body>
+</html>

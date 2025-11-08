@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Floor Plan Editor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            background: #1e1e1e;
+            color: #fff;
+        }
+
+        #sidebar {
+            width: 320px;
+            background: #2d2d2d;
+            padding: 20px;
+            overflow-y: auto;
+            border-right: 1px solid #444;
+        }
+
+        #canvas-container {
+            flex: 1;
+            position: relative;
+            overflow: auto;
+            background: #252525;
+        }
+
+        #canvas {
+            position: absolute;
+            cursor: crosshair;
+        }
+
+        .controls {
+            margin-bottom: 20px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #aaa;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+
+        input[type="text"], select {
+            width: 100%;
+            padding: 8px;
+            background: #1e1e1e;
+            border: 1px solid #444;
+            color: #fff;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        input[type="text"]:focus, select:focus {
+            outline: none;
+            border-color: #007acc;
+        }
+
+        button {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            background: #007acc;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #005a9e;
+        }
+
+        button.secondary {
+            background: #3e3e3e;
+        }
+
+        button.secondary:hover {
+            background: #4e4e4e;
+        }
+
+        button.danger {
+            background: #d13438;
+        }
+
+        button.danger:hover {
+            background: #b01f23;
+        }
+
+        #items-list {
+            margin-top: 20px;
+        }
+
+        .item-entry {
+            background: #1e1e1e;
+            padding: 12px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            border-left: 3px solid #007acc;
+        }
+
+        .item-entry.room {
+            border-left-color: #4ec9b0;
+        }
+
+        .item-entry h4 {
+            margin-bottom: 5px;
+            color: #fff;
+        }
+
+        .item-entry p {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 3px;
+        }
+
+        .item-actions {
+            margin-top: 8px;
+        }
+
+        .item-actions button {
+            width: auto;
+            padding: 5px 10px;
+            font-size: 12px;
+            margin-right: 5px;
+            display: inline-block;
+        }
+
+        h2 {
+            margin-bottom: 15px;
+            color: #fff;
+            font-size: 18px;
+        }
+
+        h3 {
+            margin-top: 20px;
+            margin-bottom: 10px;
+            color: #aaa;
+            font-size: 14px;
+            text-transform: uppercase;
+        }
+
+        .mode-indicator {
+            padding: 8px;
+            background: #007acc;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .help-text {
+            font-size: 11px;
+            color: #888;
+            margin-top: 5px;
+            line-height: 1.4;
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <h2>Floor Plan Editor</h2>
+
+        <div class="mode-indicator" id="mode-indicator">
+            Click points to draw polygon
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <label>Item Type</label>
+                <select id="item-type">
+                    <option value="room">Room</option>
+                    <option value="chair">Chair</option>
+                    <option value="desk">Desk</option>
+                    <option value="table">Table</option>
+                    <option value="wall">Wall</option>
+                    <option value="door">Door</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>Item Name</label>
+                <input type="text" id="item-name" placeholder="e.g., Conference Room A">
+            </div>
+
+            <div class="control-group" id="room-group" style="display: none;">
+                <label>Room Assignment (for objects)</label>
+                <select id="room-assignment">
+                    <option value="">Not assigned</option>
+                </select>
+            </div>
+
+            <button id="finish-polygon">Finish Polygon (or press Enter)</button>
+            <button id="cancel-polygon" class="secondary">Cancel (or press Esc)</button>
+            <button id="clear-all" class="danger">Clear All Items</button>
+            <button id="export-data" class="secondary">Export Data</button>
+
+            <div class="help-text">
+                Click on the canvas to add points to your polygon.
+                Press Enter or click "Finish Polygon" when done.
+                Press Esc to cancel.
+            </div>
+        </div>
+
+        <div id="items-list">
+            <h3>Created Items</h3>
+            <div id="items-container"></div>
+        </div>
+    </div>
+
+    <div id="canvas-container">
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('canvas-container');
+
+        // State
+        let svgImage = null;
+        let currentPolygon = [];
+        let items = []; // {type, name, polygon: [{x, y}], room: ''}
+        let selectedItem = null;
+
+        // Load and render SVG
+        const svgPath = 'floor_plan.svg';
+
+        fetch(svgPath)
+            .then(response => response.text())
+            .then(svgText => {
+                const blob = new Blob([svgText], {type: 'image/svg+xml'});
+                const url = URL.createObjectURL(blob);
+
+                svgImage = new Image();
+                svgImage.onload = () => {
+                    canvas.width = svgImage.width;
+                    canvas.height = svgImage.height;
+                    render();
+                };
+                svgImage.src = url;
+            });
+
+        // Event Listeners
+        canvas.addEventListener('click', handleCanvasClick);
+        document.getElementById('finish-polygon').addEventListener('click', finishPolygon);
+        document.getElementById('cancel-polygon').addEventListener('click', cancelPolygon);
+        document.getElementById('clear-all').addEventListener('click', clearAll);
+        document.getElementById('export-data').addEventListener('click', exportData);
+        document.getElementById('item-type').addEventListener('change', updateRoomGroupVisibility);
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && currentPolygon.length >= 3) {
+                finishPolygon();
+            } else if (e.key === 'Escape') {
+                cancelPolygon();
+            }
+        });
+
+        function updateRoomGroupVisibility() {
+            const itemType = document.getElementById('item-type').value;
+            const roomGroup = document.getElementById('room-group');
+            roomGroup.style.display = itemType !== 'room' ? 'block' : 'none';
+        }
+
+        function handleCanvasClick(e) {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            currentPolygon.push({x, y});
+            render();
+        }
+
+        function finishPolygon() {
+            if (currentPolygon.length < 3) {
+                alert('A polygon must have at least 3 points');
+                return;
+            }
+
+            const itemType = document.getElementById('item-type').value;
+            const itemName = document.getElementById('item-name').value.trim();
+
+            if (!itemName) {
+                alert('Please enter a name for this item');
+                return;
+            }
+
+            const item = {
+                id: Date.now().toString(),
+                type: itemType,
+                name: itemName,
+                polygon: [...currentPolygon],
+                room: itemType !== 'room' ? document.getElementById('room-assignment').value : ''
+            };
+
+            items.push(item);
+            currentPolygon = [];
+            document.getElementById('item-name').value = '';
+
+            updateItemsList();
+            updateRoomAssignmentDropdown();
+            render();
+        }
+
+        function cancelPolygon() {
+            currentPolygon = [];
+            render();
+        }
+
+        function clearAll() {
+            if (confirm('Are you sure you want to clear all items?')) {
+                items = [];
+                currentPolygon = [];
+                updateItemsList();
+                updateRoomAssignmentDropdown();
+                render();
+            }
+        }
+
+        function deleteItem(id) {
+            items = items.filter(item => item.id !== id);
+            updateItemsList();
+            updateRoomAssignmentDropdown();
+            render();
+        }
+
+        function highlightItem(id) {
+            selectedItem = id;
+            render();
+        }
+
+        function unhighlightItem() {
+            selectedItem = null;
+            render();
+        }
+
+        function updateItemsList() {
+            const container = document.getElementById('items-container');
+            container.innerHTML = '';
+
+            items.forEach(item => {
+                const div = document.createElement('div');
+                div.className = `item-entry ${item.type === 'room' ? 'room' : ''}`;
+
+                let roomInfo = '';
+                if (item.type !== 'room' && item.room) {
+                    const roomObj = items.find(i => i.id === item.room);
+                    roomInfo = `<p>Room: ${roomObj ? roomObj.name : 'Unknown'}</p>`;
+                }
+
+                div.innerHTML = `
+                    <h4>${item.name}</h4>
+                    <p>Type: ${item.type}</p>
+                    ${roomInfo}
+                    <p>Points: ${item.polygon.length}</p>
+                    <div class="item-actions">
+                        <button class="secondary" onmouseover="highlightItem('${item.id}')" onmouseout="unhighlightItem()">Highlight</button>
+                        <button class="danger" onclick="deleteItem('${item.id}')">Delete</button>
+                    </div>
+                `;
+
+                container.appendChild(div);
+            });
+        }
+
+        function updateRoomAssignmentDropdown() {
+            const select = document.getElementById('room-assignment');
+            const currentValue = select.value;
+
+            select.innerHTML = '<option value="">Not assigned</option>';
+
+            items.filter(item => item.type === 'room').forEach(room => {
+                const option = document.createElement('option');
+                option.value = room.id;
+                option.textContent = room.name;
+                select.appendChild(option);
+            });
+
+            // Restore previous selection if still valid
+            if (currentValue) {
+                select.value = currentValue;
+            }
+        }
+
+        function exportData() {
+            const exportData = {
+                rooms: [],
+                objects: []
+            };
+
+            items.forEach(item => {
+                const data = {
+                    id: item.id,
+                    name: item.name,
+                    type: item.type,
+                    polygon: item.polygon,
+                    bounds: calculateBounds(item.polygon)
+                };
+
+                if (item.type === 'room') {
+                    exportData.rooms.push(data);
+                } else {
+                    data.room = item.room;
+                    const roomObj = items.find(i => i.id === item.room);
+                    data.roomName = roomObj ? roomObj.name : '';
+                    exportData.objects.push(data);
+                }
+            });
+
+            const dataStr = JSON.stringify(exportData, null, 2);
+            const dataBlob = new Blob([dataStr], {type: 'application/json'});
+            const url = URL.createObjectURL(dataBlob);
+
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'floor_plan_data.json';
+            link.click();
+
+            URL.revokeObjectURL(url);
+        }
+
+        function calculateBounds(polygon) {
+            if (polygon.length === 0) return null;
+
+            let minX = polygon[0].x, maxX = polygon[0].x;
+            let minY = polygon[0].y, maxY = polygon[0].y;
+
+            polygon.forEach(point => {
+                minX = Math.min(minX, point.x);
+                maxX = Math.max(maxX, point.x);
+                minY = Math.min(minY, point.y);
+                maxY = Math.max(maxY, point.y);
+            });
+
+            return {
+                minX, maxX, minY, maxY,
+                centerX: (minX + maxX) / 2,
+                centerY: (minY + maxY) / 2,
+                width: maxX - minX,
+                height: maxY - minY
+            };
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw SVG background
+            if (svgImage) {
+                ctx.drawImage(svgImage, 0, 0);
+            }
+
+            // Draw existing items
+            items.forEach(item => {
+                const isHighlighted = item.id === selectedItem;
+                drawPolygon(item.polygon, getColorForType(item.type), isHighlighted, true);
+            });
+
+            // Draw current polygon being created
+            if (currentPolygon.length > 0) {
+                drawPolygon(currentPolygon, '#00ff00', false, false);
+            }
+        }
+
+        function drawPolygon(points, color, highlighted, filled) {
+            if (points.length === 0) return;
+
+            ctx.save();
+
+            // Draw filled polygon
+            if (filled && points.length >= 3) {
+                ctx.beginPath();
+                ctx.moveTo(points[0].x, points[0].y);
+                for (let i = 1; i < points.length; i++) {
+                    ctx.lineTo(points[i].x, points[i].y);
+                }
+                ctx.closePath();
+                ctx.fillStyle = color + '40'; // Semi-transparent
+                ctx.fill();
+            }
+
+            // Draw outline
+            ctx.beginPath();
+            ctx.moveTo(points[0].x, points[0].y);
+            for (let i = 1; i < points.length; i++) {
+                ctx.lineTo(points[i].x, points[i].y);
+            }
+            if (filled && points.length >= 3) {
+                ctx.closePath();
+            }
+
+            ctx.strokeStyle = color;
+            ctx.lineWidth = highlighted ? 4 : 2;
+            ctx.stroke();
+
+            // Draw points
+            points.forEach((point, index) => {
+                ctx.beginPath();
+                ctx.arc(point.x, point.y, highlighted ? 6 : 4, 0, Math.PI * 2);
+                ctx.fillStyle = color;
+                ctx.fill();
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            });
+
+            ctx.restore();
+        }
+
+        function getColorForType(type) {
+            const colors = {
+                room: '#4ec9b0',
+                chair: '#dcdcaa',
+                desk: '#ce9178',
+                table: '#c586c0',
+                wall: '#808080',
+                door: '#569cd6'
+            };
+            return colors[type] || '#ffffff';
+        }
+
+        // Initial setup
+        updateRoomGroupVisibility();
+    </script>
+</body>
+</html>
