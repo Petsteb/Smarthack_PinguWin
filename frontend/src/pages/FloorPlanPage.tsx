@@ -2,25 +2,21 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Info } from 'lucide-react';
 import { FloorPlanViewer3D } from '@/components/3d/FloorPlanViewer3D';
-import { FloorPlanData, EnhancedBoundingBox } from '@/types';
-import { classifyObjects } from '@/utils/objectClassifier';
+import { FloorData } from '@/types';
 
 export default function FloorPlanPage() {
-  const [selectedObjectIndex, setSelectedObjectIndex] = useState<number | null>(null);
-  const [selectedObjectData, setSelectedObjectData] = useState<EnhancedBoundingBox | null>(null);
-  const [allObjects, setAllObjects] = useState<EnhancedBoundingBox[]>([]);
+  const [selectedObject, setSelectedObject] = useState<string | null>(null);
+  const [selectedObjectType, setSelectedObjectType] = useState<string | null>(null);
+  const [floorData, setFloorData] = useState<FloorData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Load floor plan data and classify objects
+  // Load floor plan data
   useEffect(() => {
-    Promise.all([
-      fetch('/out.json').then((res) => res.json()),
-      fetch('/assets/meshes/object-type-mapping.json').then((res) => res.json()),
-    ])
-      .then(([floorData, typeMappingData]) => {
-        const classified = classifyObjects(floorData, typeMappingData);
-        setAllObjects(classified);
+    fetch('/floor_data.json')
+      .then((res) => res.json())
+      .then((data) => {
+        setFloorData(data);
         setLoading(false);
       })
       .catch((err) => {
@@ -31,13 +27,14 @@ export default function FloorPlanPage() {
   }, []);
 
   // Handle object selection
-  const handleObjectClick = (objectIndex: number, objectType: string) => {
-    setSelectedObjectIndex(objectIndex);
-
-    // Find the selected object data
-    const objData = allObjects.find((o) => o.index === objectIndex);
-    setSelectedObjectData(objData || null);
+  const handleObjectClick = (objectName: string, objectType: string) => {
+    setSelectedObject(objectName);
+    setSelectedObjectType(objectType);
   };
+
+  // Get counts
+  const roomCount = floorData ? Object.values(floorData).filter(obj => obj.room === 1).length : 0;
+  const objectCount = floorData ? Object.keys(floorData).length - roomCount : 0;
 
   if (loading) {
     return (
@@ -63,6 +60,8 @@ export default function FloorPlanPage() {
     );
   }
 
+  const selectedObjectData = selectedObject && floorData ? floorData[selectedObject] : null;
+
   return (
     <div className="h-screen flex flex-col bg-gray-100">
       {/* Header */}
@@ -81,113 +80,122 @@ export default function FloorPlanPage() {
 
           <div className="flex items-center gap-4">
             <div className="text-sm text-gray-600">
-              <span className="font-semibold">{allObjects.length}</span> Objects Loaded
+              <span className="font-semibold">{roomCount}</span> Rooms •{' '}
+              <span className="font-semibold">{objectCount}</span> Objects
             </div>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* 3D Viewer */}
-        <div className="flex-1 relative">
-          <FloorPlanViewer3D
-            onObjectClick={handleObjectClick}
-            selectedObjectIndex={selectedObjectIndex}
-          />
-        </div>
+      {/* Main Content - FloorPlanViewer3D now includes the filter panel */}
+      <div className="flex-1 overflow-hidden">
+        <FloorPlanViewer3D
+          onObjectClick={handleObjectClick}
+          selectedObject={selectedObject}
+        />
+      </div>
 
-        {/* Sidebar - Object Details */}
-        {selectedObjectData && (
-          <div className="w-80 bg-white shadow-lg overflow-y-auto">
-            <div className="p-6">
-              <div className="flex items-start justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-900">Object Details</h2>
-                <button
-                  onClick={() => {
-                    setSelectedObjectIndex(null);
-                    setSelectedObjectData(null);
-                  }}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  ✕
-                </button>
+      {/* Sidebar - Object Details (overlay on top of the 3D viewer) */}
+      {selectedObjectData && selectedObject && (
+        <div className="absolute right-0 top-16 bottom-0 w-96 bg-white shadow-2xl overflow-y-auto z-20">
+          <div className="p-6">
+            <div className="flex items-start justify-between mb-4">
+              <h2 className="text-xl font-bold text-gray-900">Object Details</h2>
+              <button
+                onClick={() => {
+                  setSelectedObject(null);
+                  setSelectedObjectType(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-semibold text-gray-600">Name</label>
+                <p className="text-lg font-medium text-gray-900">{selectedObject}</p>
               </div>
 
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-semibold text-gray-600">Index</label>
-                  <p className="text-lg font-medium text-gray-900">#{selectedObjectData.index}</p>
+              <div>
+                <label className="text-sm font-semibold text-gray-600">Type</label>
+                <p className="text-gray-900 capitalize">
+                  {selectedObjectData.room === 1 ? 'Room' : selectedObjectType}
+                </p>
+              </div>
+
+              <div>
+                <label className="text-sm font-semibold text-gray-600">Space Rectangles</label>
+                <p className="text-gray-900">{selectedObjectData.space.length} rectangle(s)</p>
+                <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
+                  {selectedObjectData.space.map((rect, index) => (
+                    <div key={index} className="text-xs bg-gray-50 p-2 rounded">
+                      <span className="font-mono">
+                        x: {rect.x.toFixed(1)}, y: {rect.y.toFixed(1)}, w: {rect.width.toFixed(1)}, h: {rect.height.toFixed(1)}
+                      </span>
+                    </div>
+                  ))}
                 </div>
+              </div>
 
+              {selectedObjectData.chairs && selectedObjectData.chairs.length > 0 && (
                 <div>
-                  <label className="text-sm font-semibold text-gray-600">Type</label>
-                  <p className="text-gray-900 capitalize">{selectedObjectData.type}</p>
+                  <label className="text-sm font-semibold text-gray-600">Chairs</label>
+                  <p className="text-gray-900">{selectedObjectData.chairs.length} chair(s)</p>
                 </div>
+              )}
 
+              {selectedObjectData.tables && selectedObjectData.tables.length > 0 && (
                 <div>
-                  <label className="text-sm font-semibold text-gray-600">Mesh</label>
-                  <p className="text-gray-900 capitalize">{selectedObjectData.mesh}</p>
+                  <label className="text-sm font-semibold text-gray-600">Tables</label>
+                  <p className="text-gray-900">{selectedObjectData.tables.length} table(s)</p>
                 </div>
+              )}
 
-                <div>
-                  <label className="text-sm font-semibold text-gray-600">Position (2D)</label>
-                  <p className="text-gray-900 font-mono text-sm">
-                    x: {selectedObjectData.x.toFixed(1)}, y: {selectedObjectData.y.toFixed(1)}
-                  </p>
-                </div>
-
-                <div>
-                  <label className="text-sm font-semibold text-gray-600">Size</label>
-                  <p className="text-gray-900">
-                    {selectedObjectData.width.toFixed(1)} × {selectedObjectData.height.toFixed(1)}
-                  </p>
-                </div>
-
-                <div>
-                  <label className="text-sm font-semibold text-gray-600">Center Point</label>
-                  <p className="text-gray-900 font-mono text-sm">
-                    x: {selectedObjectData.centerX.toFixed(1)}, y:{' '}
-                    {selectedObjectData.centerY.toFixed(1)}
-                  </p>
-                </div>
-
-                {(selectedObjectData.type === 'room' || selectedObjectData.type === 'desk') && (
-                  <div className="pt-4 border-t">
-                    <button className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition">
-                      Book This {selectedObjectData.type === 'room' ? 'Room' : 'Desk'}
-                    </button>
-                  </div>
-                )}
-
+              {selectedObjectData.room === 1 && (
                 <div className="pt-4 border-t">
-                  <label className="text-sm font-semibold text-gray-600 mb-2 block">
-                    3D Position
-                  </label>
-                  <p className="text-xs text-gray-500">
-                    Mesh is placed at the CENTER of the bounding box in 3D space.
-                  </p>
+                  <button className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition">
+                    Book This Room
+                  </button>
                 </div>
+              )}
+
+              {!selectedObjectData.room && selectedObject.toLowerCase().includes('desk') && (
+                <div className="pt-4 border-t">
+                  <button className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition">
+                    Book This Desk
+                  </button>
+                </div>
+              )}
+
+              <div className="pt-4 border-t">
+                <label className="text-sm font-semibold text-gray-600 mb-2 block">
+                  Additional Info
+                </label>
+                <p className="text-xs text-gray-500">
+                  {selectedObjectData.room === 1
+                    ? 'This is a room area marked on the floor with a colored rectangle.'
+                    : 'This object is rendered using 3D meshes based on its type.'}
+                </p>
               </div>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Info Panel */}
       {!selectedObjectData && (
-        <div className="absolute top-20 right-4 bg-white/90 backdrop-blur-sm p-4 rounded-lg shadow-lg max-w-xs">
+        <div className="absolute top-20 left-4 bg-white/90 backdrop-blur-sm p-4 rounded-lg shadow-lg max-w-xs z-10">
           <div className="flex items-start gap-2">
             <Info size={20} className="text-blue-600 mt-0.5" />
             <div>
               <h3 className="font-semibold text-gray-900 mb-1">How to use</h3>
               <p className="text-sm text-gray-600 mb-2">
-                Click on any object to view details. Use your mouse to rotate, pan, and zoom the
-                3D view.
+                Click on any object or room to view details. Use your mouse to rotate, pan, and zoom the 3D view.
               </p>
               <p className="text-xs text-gray-500">
-                Objects are automatically classified based on their dimensions. You can customize
-                the classification rules in object-type-mapping.json.
+                Use the filter panel on the right to show/hide specific rooms and objects.
               </p>
             </div>
           </div>

@@ -22,8 +22,9 @@ async def lifespan(app: FastAPI):
     """Application lifespan events"""
     # Startup
     logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
-    await init_db()
-    logger.info("Database initialized")
+    # Temporarily disabled database initialization
+    # await init_db()
+    # logger.info("Database initialized")
     yield
     # Shutdown
     logger.info("Shutting down application")

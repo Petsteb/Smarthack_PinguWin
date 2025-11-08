@@ -13,14 +13,14 @@ interface FloorPlanViewer3DProps {
 
 // Predefined room colors for visual distinction
 const ROOM_COLORS = [
-  '#FFE5E5', // Light red
-  '#E5F3FF', // Light blue
-  '#E5FFE5', // Light green
-  '#FFF5E5', // Light orange
-  '#F5E5FF', // Light purple
-  '#FFFFE5', // Light yellow
-  '#E5FFFF', // Light cyan
-  '#FFE5F5', // Light pink
+  '#FF6B6B', // Red
+  '#4ECDC4', // Teal
+  '#45B7D1', // Blue
+  '#FFA07A', // Light Salmon
+  '#98D8C8', // Mint
+  '#F7DC6F', // Yellow
+  '#BB8FCE', // Purple
+  '#F8B500', // Orange
 ];
 
 /**
@@ -64,22 +64,28 @@ export function FloorPlanViewer3D({
       });
   }, []);
 
-  // Categorize objects into rooms and non-rooms
-  const { rooms, objects } = useMemo(() => {
-    if (!floorData) return { rooms: [], objects: [] };
+  // Categorize objects into walls, rooms, and regular objects
+  const { walls, rooms, objects } = useMemo(() => {
+    if (!floorData) return { walls: null, rooms: [], objects: [] };
 
-    const roomsList: Array<{ name: string; data: FloorData[string] }> = [];
+    let wallsData: any = null;
+    const roomsList: Array<{ name: string; data: FloorData[string]; color: string }> = [];
     const objectsList: Array<{ name: string; data: FloorData[string] }> = [];
 
+    let roomColorIndex = 0;
     Object.entries(floorData).forEach(([name, data]) => {
-      if (data.room === 1) {
-        roomsList.push({ name, data });
+      if (name === 'walls') {
+        wallsData = data;
+      } else if (data.room === 1) {
+        const color = ROOM_COLORS[roomColorIndex % ROOM_COLORS.length];
+        roomsList.push({ name, data, color });
+        roomColorIndex++;
       } else {
         objectsList.push({ name, data });
       }
     });
 
-    return { rooms: roomsList, objects: objectsList };
+    return { walls: wallsData, rooms: roomsList, objects: objectsList };
   }, [floorData]);
 
   // Toggle object visibility
@@ -174,6 +180,13 @@ export function FloorPlanViewer3D({
               fadeDistance={1500}
               fadeStrength={1}
             />
+          )}
+
+          {/* Render Walls */}
+          {walls && (
+            <Suspense fallback={null}>
+              <WallsRenderer walls={walls} meshConfig={meshConfig} />
+            </Suspense>
           )}
 
           {/* Render Rooms as Floor Rectangles */}
@@ -305,9 +318,46 @@ export function FloorPlanViewer3D({
   );
 }
 
+// Component to render walls
+interface WallsRendererProps {
+  walls: any;
+  meshConfig: MeshConfiguration;
+}
+
+function WallsRenderer({ walls, meshConfig }: WallsRendererProps) {
+  const scale = 0.05;
+  const wallConfig = meshConfig.meshes.wall;
+
+  if (!walls || !walls.interior || !Array.isArray(walls.interior)) return null;
+
+  return (
+    <group>
+      {walls.interior.map((rect: any, index: number) => {
+        const centerX = (rect.x + rect.width / 2) * scale;
+        const centerZ = (rect.y + rect.height / 2) * scale;
+        const width = rect.width * scale;
+        const depth = rect.height * scale;
+        const height = 4; // Wall height
+
+        return (
+          <mesh
+            key={`wall-${index}`}
+            position={[centerX, height / 2, centerZ]}
+            castShadow
+            receiveShadow
+          >
+            <boxGeometry args={[width, height, depth]} />
+            <meshStandardMaterial color={wallConfig?.color || '#BDC3C7'} />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+}
+
 // Component to render room floors
 interface RoomFloorsProps {
-  rooms: Array<{ name: string; data: FloorData[string] }>;
+  rooms: Array<{ name: string; data: FloorData[string]; color: string }>;
   visibleObjects: Set<string>;
   onRoomClick?: (objectName: string, objectType: string) => void;
   selectedObject?: string | null;
@@ -318,10 +368,10 @@ function RoomFloors({ rooms, visibleObjects, onRoomClick, selectedObject }: Room
 
   return (
     <group>
-      {rooms.map(({ name, data }, roomIndex) => {
+      {rooms.map(({ name, data, color }) => {
         if (!visibleObjects.has(name)) return null;
+        if (!data.space || !Array.isArray(data.space) || data.space.length === 0) return null;
 
-        const roomColor = ROOM_COLORS[roomIndex % ROOM_COLORS.length];
         const isSelected = selectedObject === name;
 
         return (
@@ -342,11 +392,11 @@ function RoomFloors({ rooms, visibleObjects, onRoomClick, selectedObject }: Room
                 >
                   <planeGeometry args={[width, depth]} />
                   <meshStandardMaterial
-                    color={roomColor}
+                    color={color}
                     opacity={isSelected ? 0.9 : 0.7}
                     transparent
                     side={THREE.DoubleSide}
-                    emissive={isSelected ? roomColor : '#000000'}
+                    emissive={isSelected ? color : '#000000'}
                     emissiveIntensity={isSelected ? 0.3 : 0}
                   />
                 </mesh>
@@ -397,6 +447,7 @@ function FloorPlanObjects({
     <group>
       {objects.map(({ name, data }) => {
         if (!visibleObjects.has(name)) return null;
+        if (!data.space || !Array.isArray(data.space) || data.space.length === 0) return null;
 
         const isSelected = selectedObject === name;
         const meshType = getMeshType(name);
@@ -414,6 +465,31 @@ function FloorPlanObjects({
               const centerX = (rect.x + rect.width / 2) * scale;
               const centerZ = (rect.y + rect.height / 2) * scale;
 
+              // For walls, tables, and desks, use extruded boxes instead of meshes
+              if (meshType === 'wall' || meshType === 'table' || meshType === 'desk') {
+                const width = rect.width * scale;
+                const depth = rect.height * scale;
+                // Set height based on object type: walls are tallest, desks and tables are similar
+                const height = meshType === 'wall' ? 4 : (meshType === 'desk' ? 1.2 : 1.5);
+
+                return (
+                  <mesh
+                    key={`${name}-space-${index}`}
+                    position={[centerX, height / 2, centerZ]}
+                    onClick={() => onObjectClick?.(name, meshType)}
+                    castShadow
+                    receiveShadow
+                  >
+                    <boxGeometry args={[width, height, depth]} />
+                    <meshStandardMaterial
+                      color={config.color}
+                      emissive={isSelected ? config.color : '#000000'}
+                      emissiveIntensity={isSelected ? 0.3 : 0}
+                    />
+                  </mesh>
+                );
+              }
+
               return (
                 <MeshLoader
                   key={`${name}-space-${index}`}
@@ -427,7 +503,7 @@ function FloorPlanObjects({
             })}
 
             {/* Render chairs if present */}
-            {data.chairs?.map((rect, index) => {
+            {data.chairs && Array.isArray(data.chairs) && data.chairs.map((rect, index) => {
               const chairConfig = meshConfig.meshes.chair;
               if (!chairConfig) return null;
 
@@ -447,22 +523,31 @@ function FloorPlanObjects({
             })}
 
             {/* Render tables if present */}
-            {data.tables?.map((rect, index) => {
+            {data.tables && Array.isArray(data.tables) && data.tables.map((rect, index) => {
               const tableConfig = meshConfig.meshes.table;
               if (!tableConfig) return null;
 
               const centerX = (rect.x + rect.width / 2) * scale;
               const centerZ = (rect.y + rect.height / 2) * scale;
+              const width = rect.width * scale;
+              const depth = rect.height * scale;
+              const height = 1.5; // Table height
 
               return (
-                <MeshLoader
+                <mesh
                   key={`${name}-table-${index}`}
-                  type="table"
-                  config={tableConfig}
-                  position={[centerX, 0, centerZ]}
+                  position={[centerX, height / 2, centerZ]}
                   onClick={() => onObjectClick?.(name, 'table')}
-                  isSelected={isSelected}
-                />
+                  castShadow
+                  receiveShadow
+                >
+                  <boxGeometry args={[width, height, depth]} />
+                  <meshStandardMaterial
+                    color={tableConfig.color}
+                    emissive={isSelected ? tableConfig.color : '#000000'}
+                    emissiveIntensity={isSelected ? 0.3 : 0}
+                  />
+                </mesh>
               );
             })}
           </group>

@@ -27,10 +27,24 @@ export interface Rectangle {
 }
 
 export interface FloorObject {
-  space: Rectangle[];
+  space?: Rectangle[];
   room?: number; // 1 means it's a room
   chairs?: Rectangle[];
   tables?: Rectangle[];
+  couch?: Rectangle[];
+  // Nested sub-objects (like teamMeetings.small, teamMeetings.round4)
+  [key: string]: Rectangle[] | number | NestedRoomObject | undefined;
+}
+
+export interface NestedRoomObject {
+  space?: Rectangle[];
+  chairs?: Rectangle[];
+  tables?: Rectangle[];
+  [key: string]: Rectangle[] | undefined;
+}
+
+export interface WallsObject {
+  interior: Rectangle[];
 }
 
 export interface FloorData {
