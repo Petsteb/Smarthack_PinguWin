@@ -22,7 +22,7 @@ async def lifespan(app: FastAPI):
     """Application lifespan events"""
     # Startup
     logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
-    # Temporarily disabled database initialization
+    # Using existing database - no need to initialize
     # await init_db()
     # logger.info("Database initialized")
     yield
@@ -96,11 +96,13 @@ async def root():
 
 
 # Import and register routers
-# TODO: Import routers as they are created
-# from app.routes import auth, users, rooms, bookings, statistics, gamification
+from app.routes import auth, users
 
-# app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
-# app.include_router(users.router, prefix="/api/users", tags=["Users"])
+app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
+app.include_router(users.router, prefix="/api/users", tags=["Users"])
+
+# TODO: Import additional routers as they are created
+# from app.routes import rooms, bookings, statistics, gamification
 # app.include_router(rooms.router, prefix="/api/rooms", tags=["Rooms"])
 # app.include_router(bookings.router, prefix="/api/bookings", tags=["Bookings"])
 # app.include_router(statistics.router, prefix="/api/statistics", tags=["Statistics"])

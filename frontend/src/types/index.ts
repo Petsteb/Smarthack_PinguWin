@@ -30,6 +30,9 @@ export interface FloorObject {
   space?: Rectangle[];
   room?: number; // 1 means it's a room
   chairs?: Rectangle[];
+  chairsNormal?: Rectangle[];
+  chairsElipsa?: Rectangle[];
+  chairsEvantai?: Rectangle[];
   tables?: Rectangle[];
   couch?: Rectangle[];
   // Nested sub-objects (like teamMeetings.small, teamMeetings.round4)
@@ -39,6 +42,9 @@ export interface FloorObject {
 export interface NestedRoomObject {
   space?: Rectangle[];
   chairs?: Rectangle[];
+  chairsNormal?: Rectangle[];
+  chairsElipsa?: Rectangle[];
+  chairsEvantai?: Rectangle[];
   tables?: Rectangle[];
   [key: string]: Rectangle[] | undefined;
 }

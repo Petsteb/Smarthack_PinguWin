@@ -22,6 +22,12 @@ const ROOM_COLORS = [
   '#F8B500', // Orange
 ];
 
+// Helper function to darken a color (creates black overlay effect)
+function darkenColor(color: string, factor: number): string {
+  const c = new THREE.Color(color);
+  return '#' + c.multiplyScalar(factor).getHexString();
+}
+
 // Fixed camera positions
 // Floor plan center (calculated from floor_data.json exterior walls)
 // X range: 297 to 3286.75, Y range: 312.51 to 1270.1
@@ -837,9 +843,10 @@ function RoomFloors({ rooms, visibleObjects, onRoomClick, selectedObject, hovere
           >
             <boxGeometry args={[width, height, depth]} />
             <meshStandardMaterial
-              color="#9B59B6"
-              emissive={isSelected ? '#9B59B6' : '#000000'}
+              color={isSelected ? darkenColor('#9B59B6', 0.2) : '#9B59B6'}
+              emissive={isSelected ? '#FFFFFF' : '#000000'}
               emissiveIntensity={isSelected ? 0.3 : 0}
+              roughness={isSelected ? 0.3 : 0.5}
             />
           </mesh>
         );
@@ -858,6 +865,81 @@ function RoomFloors({ rooms, visibleObjects, onRoomClick, selectedObject, hovere
         furniture.push(
           <mesh
             key={`${keyPrefix}-chair-${index}`}
+            position={[centerX, height / 2, centerZ]}
+            castShadow
+            receiveShadow
+          >
+            <boxGeometry args={[width, height, depth]} />
+            <meshStandardMaterial
+              color="#FFD93D"
+            />
+          </mesh>
+        );
+      });
+    }
+
+    // Render chairsNormal (for wellbeing room)
+    if (data.chairsNormal && Array.isArray(data.chairsNormal)) {
+      data.chairsNormal.forEach((rect: Rectangle, index: number) => {
+        const centerX = (rect.x + rect.width / 2) * scale;
+        const centerZ = (rect.y + rect.height / 2) * scale;
+        const width = rect.width * scale;
+        const depth = rect.height * scale;
+        const height = 1.0;
+
+        furniture.push(
+          <mesh
+            key={`${keyPrefix}-chairNormal-${index}`}
+            position={[centerX, height / 2, centerZ]}
+            castShadow
+            receiveShadow
+          >
+            <boxGeometry args={[width, height, depth]} />
+            <meshStandardMaterial
+              color="#FFD93D"
+            />
+          </mesh>
+        );
+      });
+    }
+
+    // Render chairsElipsa (for wellbeing room)
+    if (data.chairsElipsa && Array.isArray(data.chairsElipsa)) {
+      data.chairsElipsa.forEach((rect: Rectangle, index: number) => {
+        const centerX = (rect.x + rect.width / 2) * scale;
+        const centerZ = (rect.y + rect.height / 2) * scale;
+        const width = rect.width * scale;
+        const depth = rect.height * scale;
+        const height = 1.0;
+
+        furniture.push(
+          <mesh
+            key={`${keyPrefix}-chairElipsa-${index}`}
+            position={[centerX, height / 2, centerZ]}
+            castShadow
+            receiveShadow
+          >
+            <boxGeometry args={[width, height, depth]} />
+            <meshStandardMaterial
+              color="#FFD93D"
+            />
+          </mesh>
+        );
+      });
+    }
+
+    // Render chairsEvantai (for wellbeing room)
+    if (data.chairsEvantai && Array.isArray(data.chairsEvantai)) {
+      data.chairsEvantai.forEach((rect: Rectangle, index: number) => {
+        const centerX = (rect.x + rect.width / 2) * scale;
+        const centerZ = (rect.y + rect.height / 2) * scale;
+        const width = rect.width * scale;
+        const depth = rect.height * scale;
+        const height = 1.0;
+
+        furniture.push(
+          <mesh
+            key={`${keyPrefix}-chairEvantai-${index}`}
             position={[centerX, height / 2, centerZ]}
             castShadow
             receiveShadow
@@ -916,12 +998,13 @@ function RoomFloors({ rooms, visibleObjects, onRoomClick, selectedObject, hovere
                 >
                   <planeGeometry args={[width, depth]} />
                   <meshStandardMaterial
-                    color={color}
-                    opacity={isSelected ? 0.9 : isHovered ? 0.8 : 0.7}
+                    color={isSelected ? darkenColor(color, 0.2) : isHovered ? darkenColor(color, 0.4) : color}
+                    opacity={isSelected ? 0.85 : isHovered ? 0.75 : 0.7}
                     transparent
                     side={THREE.DoubleSide}
-                    emissive={isSelected ? color : isHovered ? color : '#000000'}
-                    emissiveIntensity={isSelected ? 0.3 : isHovered ? 0.15 : 0}
+                    emissive={isSelected ? '#FFFFFF' : isHovered ? '#CCCCCC' : '#000000'}
+                    emissiveIntensity={isSelected ? 0.3 : isHovered ? 0.2 : 0}
+                    roughness={isSelected ? 0.3 : isHovered ? 0.4 : 0.5}
                   />
                 </mesh>
               );
@@ -1033,9 +1116,10 @@ function FloorPlanObjects({
                 >
                   <boxGeometry args={[width, height, depth]} />
                   <meshStandardMaterial
-                    color={config.color}
-                    emissive={isIndividualSelected ? config.color : isIndividualHovered ? config.color : '#000000'}
-                    emissiveIntensity={isIndividualSelected ? 0.3 : isIndividualHovered ? 0.15 : 0}
+                    color={isIndividualSelected ? darkenColor(config.color, 0.2) : isIndividualHovered ? darkenColor(config.color, 0.4) : config.color}
+                    emissive={isIndividualSelected ? '#FFFFFF' : isIndividualHovered ? '#CCCCCC' : '#000000'}
+                    emissiveIntensity={isIndividualSelected ? 0.3 : isIndividualHovered ? 0.2 : 0}
+                    roughness={isIndividualSelected ? 0.3 : isIndividualHovered ? 0.4 : 0.5}
                   />
                 </mesh>
               );
@@ -1055,6 +1139,84 @@ function FloorPlanObjects({
               return (
                 <mesh
                   key={`${name}-chair-${index}`}
+                  position={[centerX, height / 2, centerZ]}
+                  castShadow
+                  receiveShadow
+                >
+                  <boxGeometry args={[width, height, depth]} />
+                  <meshStandardMaterial
+                    color={chairConfig.color}
+                  />
+                </mesh>
+              );
+            })}
+
+            {/* Render chairsNormal if present (for wellbeing room) */}
+            {data.chairsNormal && Array.isArray(data.chairsNormal) && data.chairsNormal.map((rect, index) => {
+              const chairConfig = meshConfig.meshes.chair;
+              if (!chairConfig) return null;
+
+              const centerX = (rect.x + rect.width / 2) * scale;
+              const centerZ = (rect.y + rect.height / 2) * scale;
+              const width = rect.width * scale;
+              const depth = rect.height * scale;
+              const height = 1.0; // Chair height
+
+              return (
+                <mesh
+                  key={`${name}-chairNormal-${index}`}
+                  position={[centerX, height / 2, centerZ]}
+                  castShadow
+                  receiveShadow
+                >
+                  <boxGeometry args={[width, height, depth]} />
+                  <meshStandardMaterial
+                    color={chairConfig.color}
+                  />
+                </mesh>
+              );
+            })}
+
+            {/* Render chairsElipsa if present (for wellbeing room) */}
+            {data.chairsElipsa && Array.isArray(data.chairsElipsa) && data.chairsElipsa.map((rect, index) => {
+              const chairConfig = meshConfig.meshes.chair;
+              if (!chairConfig) return null;
+
+              const centerX = (rect.x + rect.width / 2) * scale;
+              const centerZ = (rect.y + rect.height / 2) * scale;
+              const width = rect.width * scale;
+              const depth = rect.height * scale;
+              const height = 1.0; // Chair height
+
+              return (
+                <mesh
+                  key={`${name}-chairElipsa-${index}`}
+                  position={[centerX, height / 2, centerZ]}
+                  castShadow
+                  receiveShadow
+                >
+                  <boxGeometry args={[width, height, depth]} />
+                  <meshStandardMaterial
+                    color={chairConfig.color}
+                  />
+                </mesh>
+              );
+            })}
+
+            {/* Render chairsEvantai if present (for wellbeing room) */}
+            {data.chairsEvantai && Array.isArray(data.chairsEvantai) && data.chairsEvantai.map((rect, index) => {
+              const chairConfig = meshConfig.meshes.chair;
+              if (!chairConfig) return null;
+
+              const centerX = (rect.x + rect.width / 2) * scale;
+              const centerZ = (rect.y + rect.height / 2) * scale;
+              const width = rect.width * scale;
+              const depth = rect.height * scale;
+              const height = 1.0; // Chair height
+
+              return (
+                <mesh
+                  key={`${name}-chairEvantai-${index}`}
                   position={[centerX, height / 2, centerZ]}
                   castShadow
                   receiveShadow
@@ -1097,9 +1259,10 @@ function FloorPlanObjects({
                 >
                   <boxGeometry args={[width, height, depth]} />
                   <meshStandardMaterial
-                    color={tableConfig.color}
-                    emissive={isSelected ? tableConfig.color : '#000000'}
+                    color={isSelected ? darkenColor(tableConfig.color, 0.2) : tableConfig.color}
+                    emissive={isSelected ? '#FFFFFF' : '#000000'}
                     emissiveIntensity={isSelected ? 0.3 : 0}
+                    roughness={isSelected ? 0.3 : 0.5}
                   />
                 </mesh>
               );

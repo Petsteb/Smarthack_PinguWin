@@ -535,7 +535,7 @@ if (!data.space || !Array.isArray(data.space) || data.space.length === 0) {
 
 ## Pending Tasks / Next Steps
 
-**No pending tasks.** All user requests completed:
+**3D Viewer - All completed:**
 - ✅ Individual desk hover/click
 - ✅ Training room toggles (consolidated into Rooms section)
 - ✅ Team meeting room splitting (4+1+3)
@@ -546,15 +546,41 @@ if (!data.space || !Array.isArray(data.space) || data.space.length === 0) {
 - ✅ Disabled chair/wall interactions
 - ✅ Exterior walls toggle
 
+**User Authentication System - Recently Completed:**
+- ✅ Backend authentication API (register, login, JWT tokens)
+- ✅ Frontend auth context and protected routes
+- ✅ Login/Register pages
+- ✅ Profile page with editing
+- ✅ Navigation with user menu
+- ⚠️ **PENDING:** Database migration must be run (see section below)
+
+### Immediate Next Step: Database Migration Required ⚠️
+
+**File:** `backend/add_user_columns.sql`
+
+**Action Required:**
+1. Open Supabase Dashboard → SQL Editor
+2. Copy entire contents of `backend/add_user_columns.sql`
+3. Execute the migration
+4. Verify: `SELECT * FROM users LIMIT 1;`
+5. Restart backend server
+6. Test registration at http://localhost:5173/register
+
+**Why Required:** New columns (username, full_name, gamification fields, etc.) need to be added to existing users table.
+
 ### Potential Future Enhancements
-1. Backend integration for real booking functionality
-2. User authentication and session management
+1. ~~Backend integration for real booking functionality~~ (In progress)
+2. ~~User authentication and session management~~ (✅ Completed)
 3. Real-time availability updates
 4. Calendar integration for room/desk scheduling
 5. User preferences and favorite workspaces
 6. Analytics dashboard for space utilization
 7. Mobile responsive design
 8. Accessibility improvements
+9. Email verification and password reset emails
+10. Room and desk booking endpoints
+11. Booking conflict detection
+12. Gamification features (achievements, leaderboard)
 
 ---
 
@@ -620,10 +646,741 @@ if (!data.space || !Array.isArray(data.space) || data.space.length === 0) {
 
 ---
 
+## User Authentication System Implementation
+
+**Implementation Date:** 2025-11-09
+**Status:** Code Complete - Database Migration Pending
+
+### Overview
+
+Implemented complete full-stack user authentication and profile management system using JWT tokens, integrating with existing Supabase database schema.
+
+---
+
+### Backend Implementation
+
+#### 1. Database Schema Adaptation ✅
+
+**Challenge:** Existing database uses BigInteger `user_id` (auto-increment), but modern FastAPI patterns typically use UUID.
+
+**Solution:** Adapted User model to existing schema while maintaining backward compatibility.
+
+**File:** `backend/app/models/user.py`
+
+```python
+class User(Base):
+    __tablename__ = "users"
+
+    # Primary fields (from existing schema)
+    user_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    email = Column(Text, unique=True, nullable=False, index=True)
+    name = Column(Text, nullable=False)  # Original field
+    hashed_password = Column(Text, nullable=False)
+    role = Column(Text, nullable=False, server_default='employee')
+
+    # New optional fields (added via migration)
+    username = Column(Text, unique=True, nullable=True)
+    full_name = Column(Text, nullable=True)
+    avatar_url = Column(Text, nullable=True)
+    bio = Column(Text, nullable=True)
+    phone = Column(Text, nullable=True)
+    department = Column(Text, nullable=True)
+    job_title = Column(Text, nullable=True)
+
+    # Status fields
+    is_active = Column(Boolean, nullable=False, server_default='true')
+    is_verified = Column(Boolean, nullable=False, server_default='false')
+
+    # Gamification fields
+    total_points = Column(Integer, nullable=False, server_default='0')
+    level = Column(Integer, nullable=False, server_default='1')
+    tokens = Column(Integer, nullable=False, server_default='0')
+
+    # Preferences and timestamps
+    preferences = Column(JSONB, nullable=False, server_default='{}')
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('NOW()'))
+    updated_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('NOW()'))
+    last_login = Column(TIMESTAMP(timezone=True), nullable=True)
+    deleted_at = Column(TIMESTAMP(timezone=True), nullable=True)
+
+    @property
+    def id(self):
+        """Alias for user_id for API compatibility"""
+        return self.user_id
+```
+
+**Key Points:**
+- `user_id` is the actual primary key
+- `id` property provides compatibility alias
+- `name` field is required (from original schema)
+- `full_name` is optional new field
+- All new fields are nullable to avoid breaking existing data
+
+#### 2. Authentication Routes ✅
+
+**File:** `backend/app/routes/auth.py`
+
+**Endpoints:**
+- `POST /api/auth/register` - Create new account
+- `POST /api/auth/login` - Get JWT tokens (access + refresh)
+- `POST /api/auth/refresh` - Refresh access token
+- `POST /api/auth/logout` - Logout (client-side token removal)
+- `GET /api/auth/me` - Get current user info
+- `POST /api/auth/change-password` - Change password
+- `POST /api/auth/forgot-password` - Request password reset
+- `POST /api/auth/reset-password` - Reset password with token
+- `POST /api/auth/verify-email/{token}` - Email verification (TODO)
+
+**Key Features:**
+- Bcrypt password hashing
+- JWT tokens (access: 30min, refresh: 7 days)
+- Password validation (min 8 chars, uppercase, lowercase, digit)
+- Email uniqueness validation
+- Username uniqueness validation (if provided)
+- Returns token in DEBUG mode for password reset (dev only)
+
+#### 3. User Management Routes ✅
+
+**File:** `backend/app/routes/users.py`
+
+**User Endpoints:**
+- `GET /api/users/me` - Get full profile
+- `PUT /api/users/me` - Update own profile
+- `GET /api/users/me/stats` - Get own statistics
+- `GET /api/users/{user_id}` - Get user by ID
+- `GET /api/users/{user_id}/stats` - Get user stats
+
+**Manager/Admin Endpoints:**
+- `GET /api/users/` - List all users (paginated)
+- `PUT /api/users/{user_id}` - Admin update user
+- `DELETE /api/users/{user_id}` - Soft delete user
+- `POST /api/users/{user_id}/activate` - Activate user
+- `POST /api/users/{user_id}/deactivate` - Deactivate user
+- `POST /api/users/{user_id}/verify` - Manually verify email
+- `POST /api/users/{user_id}/points` - Update points
+- `POST /api/users/{user_id}/tokens` - Update tokens
+
+**Access Control:**
+- Users can view/edit own data
+- Managers can view all users
+- Admins can modify all users
+- Protection against self-deletion/deactivation
+
+#### 4. Authentication Middleware ✅
+
+**File:** `backend/app/middleware/auth.py`
+
+**Dependencies:**
+- `get_current_user` - Extract user from Bearer token
+- `get_current_active_user` - Ensure user is active
+- `get_current_verified_user` - Ensure email verified
+- `get_current_admin` - Admin-only access
+- `get_current_manager` - Manager/Admin access
+- `get_current_user_optional` - Optional auth (returns None if no token)
+
+**Utility Functions:**
+- `has_permission(user, role)` - Check role permission
+- `check_user_permission(user, target_user_id)` - Check data access permission
+
+**Token Verification Flow:**
+1. Extract Bearer token from Authorization header
+2. Verify JWT signature and expiry
+3. Extract user_id from token payload
+4. Load user from database
+5. Check active status
+6. Return User object
+
+#### 5. User Service Layer ✅
+
+**File:** `backend/app/services/user.py`
+
+**Methods:**
+- `create_user()` - Create new user with hashed password
+- `authenticate_user()` - Verify email/password
+- `get_user_by_id()` - Get user by ID
+- `get_user_by_email()` - Get user by email
+- `get_user_by_username()` - Get user by username
+- `get_users()` - List users with filters (role, active status)
+- `update_user()` - Update user profile
+- `admin_update_user()` - Admin update (includes role, status)
+- `delete_user()` - Soft delete (set deleted_at)
+- `set_user_active_status()` - Activate/deactivate
+- `verify_user_email()` - Mark email as verified
+- `change_password()` - Change password (verify old password)
+- `reset_password()` - Reset password (no old password required)
+- `update_user_points()` - Add/remove points
+- `update_user_tokens()` - Add/remove tokens
+- `get_user_stats()` - Get booking statistics (TODO: implement)
+
+**All methods use `int` for user_id, not UUID**
+
+#### 6. Pydantic Schemas ✅
+
+**File:** `backend/app/schemas/user.py`
+
+**Authentication Schemas:**
+- `UserRegister` - Registration with password validation
+- `UserLogin` - Email/password login
+- `TokenResponse` - JWT tokens response
+- `TokenRefresh` - Refresh token request
+- `PasswordChange` - Change password
+- `PasswordReset` - Request password reset
+- `PasswordResetConfirm` - Reset with token
+
+**User Schemas:**
+- `UserBase` - Base fields (email, username, full_name)
+- `UserCreate` - Internal user creation
+- `UserUpdate` - Profile update
+- `UserResponse` - User data response (id: int, role: str)
+- `UserProfile` - Extended profile with supabase_user_id
+- `UserStats` - User statistics
+- `UserAdminUpdate` - Admin update (includes role, status, points)
+- `UserListResponse` - Paginated user list
+
+**Key Type Changes:**
+- `id: int` (was UUID)
+- `role: str` (was UserRole enum in responses)
+- All schemas use `from_attributes = True` for SQLAlchemy compatibility
+
+#### 7. JWT Utilities ✅
+
+**File:** `backend/app/utils/auth.py`
+
+**Functions:**
+- `verify_password()` - Verify password against hash
+- `hash_password()` - Hash password with bcrypt
+- `create_access_token()` - Create access token (30min)
+- `create_refresh_token()` - Create refresh token (7 days)
+- `verify_access_token()` - Verify and decode access token
+- `verify_refresh_token()` - Verify and decode refresh token
+- `create_password_reset_token()` - Create reset token (1 hour)
+- `verify_password_reset_token()` - Verify reset token
+
+**Token Payload:**
+```python
+{
+    "sub": str(user.id),  # User ID
+    "email": user.email,
+    "role": user.role.value,
+    "exp": expiry_timestamp
+}
+```
+
+#### 8. Database Migration ⚠️ PENDING
+
+**File:** `backend/add_user_columns.sql`
+
+**Purpose:** Add new columns to existing users table without breaking existing data
+
+**Operations:**
+1. Add new columns (all nullable)
+2. Update role constraint to include 'user' and 'manager'
+3. Create performance indexes
+4. Sync name → full_name for existing users
+5. Map 'employee' → 'user' role for existing users
+
+**Must Execute Before Testing:**
+```sql
+-- In Supabase SQL Editor
+-- Copy and run entire file
+```
+
+#### 9. Main App Configuration ✅
+
+**File:** `backend/app/main.py`
+
+**Changes:**
+- Registered auth router: `/api/auth`
+- Registered users router: `/api/users`
+- CORS already configured: `http://localhost:5173`
+- Database initialization disabled (using existing database)
+
+---
+
+### Frontend Implementation
+
+#### 1. API Service Layer ✅
+
+**File:** `frontend/src/services/api.ts`
+
+**Axios Instance with Interceptors:**
+```typescript
+// Request interceptor - inject token
+api.interceptors.request.use((config) => {
+    const token = localStorage.getItem('access_token');
+    if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+});
+
+// Response interceptor - auto refresh on 401
+api.interceptors.response.use(
+    (response) => response,
+    async (error) => {
+        if (error.response?.status === 401 && !originalRequest._retry) {
+            // Try to refresh token
+            const refreshToken = localStorage.getItem('refresh_token');
+            if (refreshToken) {
+                const newTokens = await refreshAccessToken(refreshToken);
+                // Retry original request with new token
+            }
+        }
+        return Promise.reject(error);
+    }
+);
+```
+
+**File:** `frontend/src/services/auth.ts`
+
+**Auth API Methods:**
+- `login(email, password)` - Login and store tokens
+- `register(userData)` - Create account
+- `logout()` - Clear tokens
+- `getCurrentUser()` - Get current user info
+- `updateProfile(data)` - Update profile
+- `changePassword(current, new)` - Change password
+- `forgotPassword(email)` - Request reset
+- `resetPassword(token, password)` - Reset password
+- `getUserStats()` - Get user statistics
+- `refreshToken(refreshToken)` - Refresh access token
+
+#### 2. Authentication Context ✅
+
+**File:** `frontend/src/contexts/AuthContext.tsx`
+
+**State:**
+```typescript
+interface AuthContextType {
+    user: User | null;
+    loading: boolean;
+    login: (email, password) => Promise<void>;
+    register: (userData) => Promise<void>;
+    logout: () => void;
+    refreshUser: () => Promise<void>;
+}
+```
+
+**Features:**
+- Global user state
+- Token storage in localStorage
+- Auto-refresh user on mount
+- Login/logout/register methods
+- Loading states for async operations
+- Error handling
+
+**Usage:**
+```typescript
+const { user, login, logout, loading } = useAuth();
+```
+
+#### 3. Protected Routes ✅
+
+**File:** `frontend/src/components/auth/ProtectedRoute.tsx`
+
+**Features:**
+- Redirect to login if not authenticated
+- Role-based access control
+- Loading state while checking auth
+- Preserves intended destination in redirect
+
+**Usage:**
+```typescript
+<Route path="/profile" element={
+    <ProtectedRoute>
+        <ProfilePage />
+    </ProtectedRoute>
+} />
+
+<Route path="/admin" element={
+    <ProtectedRoute requiredRole={UserRole.ADMIN}>
+        <AdminPage />
+    </ProtectedRoute>
+} />
+```
+
+#### 4. Navigation Component ✅
+
+**File:** `frontend/src/components/layout/Navigation.tsx`
+
+**Features:**
+- Conditional rendering based on auth state
+- User dropdown menu (Profile, Settings, Logout)
+- Login/Signup buttons for guests
+- Active link highlighting
+- Responsive design
+
+**Menu Items:**
+- Home
+- Floor Plan (protected)
+- Profile (authenticated users)
+- Settings (authenticated users)
+- Admin (admin only)
+- Login/Signup (guests)
+- Logout (authenticated users)
+
+#### 5. Login Page ✅
+
+**File:** `frontend/src/pages/LoginPage.tsx`
+
+**Features:**
+- Email/password form
+- Form validation
+- Error display
+- Loading states
+- Redirect to floor plan after login
+- Link to registration page
+
+**Validation:**
+- Email format
+- Password required
+- Error messages from API
+
+#### 6. Registration Page ✅
+
+**File:** `frontend/src/pages/RegisterPage.tsx`
+
+**Features:**
+- Full registration form
+- Password strength indicator
+- Real-time validation
+- Error display
+- Loading states
+- Redirect to floor plan after registration
+- Link to login page
+
+**Form Fields:**
+- Email (required)
+- Password (required, validated)
+- Full Name (optional)
+- Username (optional)
+
+**Password Validation:**
+- Minimum 8 characters
+- At least one uppercase letter
+- At least one lowercase letter
+- At least one digit
+- Visual strength indicator (weak/medium/strong)
+
+#### 7. Profile Page ✅
+
+**File:** `frontend/src/pages/ProfilePage.tsx`
+
+**Features:**
+- View user profile
+- Edit profile form
+- User statistics display
+- Avatar display (if set)
+- Points, level, tokens display
+- Save changes functionality
+- Error handling
+- Success messages
+
+**Sections:**
+1. **Profile Info:**
+   - Email (read-only)
+   - Username
+   - Full Name
+   - Bio
+   - Phone
+   - Department
+   - Job Title
+
+2. **Gamification:**
+   - Total Points
+   - Level
+   - Tokens
+
+3. **Statistics:**
+   - Total Bookings
+   - Active Bookings
+   - Completed Bookings
+   - Total Hours Booked
+
+#### 8. App Integration ✅
+
+**File:** `frontend/src/main.tsx`
+```typescript
+<AuthProvider>
+    <App />
+</AuthProvider>
+```
+
+**File:** `frontend/src/App.tsx`
+```typescript
+<Routes>
+    <Route path="/login" element={<LoginPage />} />
+    <Route path="/register" element={<RegisterPage />} />
+    <Route path="/floor-plan" element={
+        <ProtectedRoute><FloorPlanPage /></ProtectedRoute>
+    } />
+    <Route path="/profile" element={
+        <ProtectedRoute><ProfilePage /></ProtectedRoute>
+    } />
+</Routes>
+```
+
+---
+
+### Technical Decisions
+
+#### 1. Primary Key Type: BigInteger vs UUID
+**Decision:** Use BigInteger (auto-increment)
+**Reason:** Match existing database schema
+**Implementation:** Added `id` property alias for compatibility
+
+#### 2. Role Storage: Text vs Enum
+**Decision:** Store as TEXT in database, use enum in code
+**Reason:** Existing schema uses TEXT with CHECK constraint
+**Implementation:** Convert enum to string for storage, string to enum for validation
+
+#### 3. Token Storage: localStorage vs Cookies
+**Decision:** localStorage for development
+**Reason:** Simpler implementation, good for SPA
+**Production Consideration:** Consider httpOnly cookies for enhanced security
+
+#### 4. Token Refresh Strategy
+**Decision:** Axios interceptor with automatic refresh
+**Reason:** Seamless UX, no manual token management
+**Implementation:** Intercept 401 errors, refresh token, retry request
+
+#### 5. Password Reset: Email vs Token Return
+**Decision:** Return token in DEBUG mode, email in production
+**Reason:** Easier testing without email server
+**Implementation:** Conditional logic based on `settings.DEBUG`
+
+---
+
+### Error Fixes Applied
+
+#### Fix 1: FastAPI Dependency Injection ✅
+**Error:** `Invalid args for response field! AsyncSession is not a valid Pydantic field type`
+
+**Cause:** Missing `Depends()` annotation in `get_user_service`
+
+**Fix:**
+```python
+# Before:
+def get_user_service(db: AsyncSession) -> UserService:
+
+# After:
+def get_user_service(db: AsyncSession = Depends(get_db)) -> UserService:
+```
+
+**Location:** `backend/app/services/user.py:180`
+
+#### Fix 2: Database Schema Mismatch ✅
+**Error:** `column users.id does not exist`
+
+**Cause:** Model used UUID `id`, database has BigInteger `user_id`
+
+**Fix:**
+1. Rewrote User model to use `user_id` as primary key
+2. Added `id` property as alias
+3. Changed all UUID type hints to `int`
+4. Updated all service methods
+5. Updated all route parameters
+6. Updated all schemas
+7. Created migration script for new columns
+
+**Files Modified:**
+- `backend/app/models/user.py`
+- `backend/app/services/user.py`
+- `backend/app/routes/auth.py`
+- `backend/app/routes/users.py`
+- `backend/app/middleware/auth.py`
+- `backend/app/schemas/user.py`
+
+#### Fix 3: CORS Already Configured ✅
+**Status:** CORS already configured in `.env`
+**Value:** `CORS_ORIGINS=http://localhost:5173`
+**No changes needed**
+
+---
+
+### Environment Variables
+
+#### Backend `.env`
+```env
+# Required
+SECRET_KEY=your-secret-key-here
+JWT_SECRET_KEY=your-jwt-secret-here
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=your-anon-key
+SUPABASE_SERVICE_KEY=your-service-key
+DATABASE_URL=postgresql://user:pass@host/db
+
+# Optional (have defaults)
+CORS_ORIGINS=http://localhost:5173
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+REFRESH_TOKEN_EXPIRE_DAYS=7
+DEBUG=True
+```
+
+#### Frontend `.env`
+```env
+VITE_API_URL=http://localhost:8000
+```
+
+---
+
+### File Structure
+
+```
+backend/
+├── app/
+│   ├── models/
+│   │   └── user.py                    # User model (user_id primary key)
+│   ├── schemas/
+│   │   └── user.py                    # Pydantic schemas
+│   ├── services/
+│   │   └── user.py                    # UserService
+│   ├── routes/
+│   │   ├── auth.py                    # Auth endpoints
+│   │   └── users.py                   # User management
+│   ├── middleware/
+│   │   └── auth.py                    # JWT verification
+│   ├── utils/
+│   │   └── auth.py                    # JWT helpers
+│   ├── config.py                      # Settings
+│   ├── database.py                    # DB setup
+│   └── main.py                        # FastAPI app
+├── add_user_columns.sql               # ⚠️ MIGRATION PENDING
+└── .env
+
+frontend/
+├── src/
+│   ├── services/
+│   │   ├── api.ts                     # Axios instance
+│   │   └── auth.ts                    # Auth API
+│   ├── contexts/
+│   │   └── AuthContext.tsx            # Global auth state
+│   ├── components/
+│   │   ├── auth/
+│   │   │   └── ProtectedRoute.tsx     # Route protection
+│   │   └── layout/
+│   │       └── Navigation.tsx         # Nav with auth
+│   ├── pages/
+│   │   ├── LoginPage.tsx              # Login form
+│   │   ├── RegisterPage.tsx           # Registration
+│   │   └── ProfilePage.tsx            # Profile view/edit
+│   ├── App.tsx                        # Routes
+│   └── main.tsx                       # Entry point
+└── .env
+```
+
+---
+
+### API Endpoints Reference
+
+#### Public Endpoints
+```
+POST   /api/auth/register              Create account
+POST   /api/auth/login                 Get JWT tokens
+POST   /api/auth/refresh               Refresh access token
+POST   /api/auth/forgot-password       Request reset
+POST   /api/auth/reset-password        Reset with token
+```
+
+#### Authenticated Endpoints
+```
+GET    /api/auth/me                    Current user info
+POST   /api/auth/logout                Logout
+POST   /api/auth/change-password       Change password
+GET    /api/users/me                   Full profile
+PUT    /api/users/me                   Update profile
+GET    /api/users/me/stats             User statistics
+```
+
+#### Manager/Admin Endpoints
+```
+GET    /api/users/                     List all users
+GET    /api/users/{id}                 Get user by ID
+GET    /api/users/{id}/stats           User stats by ID
+```
+
+#### Admin Only Endpoints
+```
+PUT    /api/users/{id}                 Update user
+DELETE /api/users/{id}                 Soft delete
+POST   /api/users/{id}/activate        Activate user
+POST   /api/users/{id}/deactivate      Deactivate user
+POST   /api/users/{id}/verify          Verify email
+POST   /api/users/{id}/points          Update points
+POST   /api/users/{id}/tokens          Update tokens
+```
+
+---
+
+### Testing Checklist
+
+**Database Migration:**
+- [ ] Migration script executed in Supabase
+- [ ] New columns exist in users table
+- [ ] Indexes created successfully
+
+**Backend API:**
+- [ ] Backend starts without errors
+- [ ] Swagger docs accessible at http://localhost:8000/docs
+- [ ] Can register new user
+- [ ] Can login and receive tokens
+- [ ] Protected endpoints require auth
+- [ ] Token refresh works
+- [ ] Password change works
+
+**Frontend:**
+- [ ] Frontend starts at http://localhost:5173
+- [ ] Can access login page
+- [ ] Can register new account
+- [ ] Redirected to floor plan after login
+- [ ] Can view profile
+- [ ] Can edit profile
+- [ ] Can logout
+- [ ] Protected routes redirect to login
+- [ ] Token auto-refresh works
+- [ ] Navigation shows correct items based on auth state
+
+---
+
+### Known Limitations
+
+1. **Email Verification:** Endpoint exists but not fully implemented (no email sending)
+2. **Password Reset Emails:** Returns token in DEBUG mode, email integration TODO
+3. **User Stats:** `get_user_stats()` returns placeholder data (booking integration pending)
+4. **Token Blacklist:** Logout doesn't blacklist tokens (consider Redis for production)
+5. **Rate Limiting:** Not implemented yet
+6. **Account Deletion:** Soft delete only (hard delete not implemented)
+
+---
+
+### Next Steps After Migration
+
+1. **Run Migration:**
+   - Execute `backend/add_user_columns.sql` in Supabase
+   - Verify columns added successfully
+
+2. **Test Complete Flow:**
+   - Start backend: `uvicorn app.main:app --reload`
+   - Start frontend: `npm run dev`
+   - Register new user
+   - Login and verify token
+   - View/edit profile
+   - Test admin endpoints (if admin user exists)
+
+3. **Integration Tasks:**
+   - Connect user system to booking system
+   - Implement user stats from actual bookings
+   - Add email verification flow
+   - Set up SMTP for password reset emails
+   - Integrate gamification (points on bookings)
+
+---
+
 **END OF SESSION CONTEXT**
 
 To resume work in next session:
 1. Read this file for complete context
-2. All current features are fully implemented and working
-3. Ready for new feature requests or enhancements
-4. Backend integration pending for booking functionality
+2. 3D floor plan viewer fully implemented and working
+3. User authentication system code complete
+4. **ACTION REQUIRED:** Run database migration before testing auth
+5. Ready for booking system integration

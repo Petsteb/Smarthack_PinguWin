@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, DateTime, Integer, Enum as SQLEnum, Text
+from sqlalchemy import Column, String, Boolean, DateTime, Integer, BigInteger, Enum as SQLEnum, Text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
 from datetime import datetime
@@ -14,6 +14,7 @@ class UserRole(str, enum.Enum):
     ADMIN = "admin"
     MANAGER = "manager"
     USER = "user"
+    EMPLOYEE = "employee"  # For backwards compatibility
 
 
 class User(Base):
@@ -21,37 +22,35 @@ class User(Base):
 
     __tablename__ = "users"
 
-    # Primary fields
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    email = Column(String(255), unique=True, nullable=False, index=True)
-    username = Column(String(100), unique=True, nullable=True, index=True)
-    full_name = Column(String(255), nullable=True)
+    # Primary fields (matching existing schema)
+    # Note: user_id uses GENERATED ALWAYS AS IDENTITY in database, so no autoincrement parameter needed
+    user_id = Column(BigInteger, primary_key=True)
+    email = Column(Text, unique=True, nullable=False, index=True)
+    name = Column(Text, nullable=False)  # Original field from schema
+    hashed_password = Column(Text, nullable=False)
+    role = Column(Text, nullable=False, server_default='employee')
 
-    # Authentication (Supabase handles this, but we store reference)
+    # New optional fields (added via migration)
+    username = Column(Text, unique=True, nullable=True, index=True)
+    full_name = Column(Text, nullable=True)
     supabase_user_id = Column(UUID(as_uuid=True), unique=True, nullable=True, index=True)
-
-    # Profile
-    avatar_url = Column(String(500), nullable=True)
+    avatar_url = Column(Text, nullable=True)
     bio = Column(Text, nullable=True)
-    phone = Column(String(20), nullable=True)
-    department = Column(String(100), nullable=True)
-    job_title = Column(String(100), nullable=True)
+    phone = Column(Text, nullable=True)
+    department = Column(Text, nullable=True)
+    job_title = Column(Text, nullable=True)
 
-    # Role and permissions
-    role = Column(SQLEnum(UserRole), default=UserRole.USER, nullable=False, index=True)
-    is_active = Column(Boolean, default=True, nullable=False)
-    is_verified = Column(Boolean, default=False, nullable=False)
+    # Status fields
+    is_active = Column(Boolean, nullable=False, server_default='true')
+    is_verified = Column(Boolean, nullable=False, server_default='false')
 
     # Gamification
-    total_points = Column(Integer, default=0, nullable=False)
-    level = Column(Integer, default=1, nullable=False)
-    tokens = Column(Integer, default=0, nullable=False)
+    total_points = Column(Integer, nullable=False, server_default='0')
+    level = Column(Integer, nullable=False, server_default='1')
+    tokens = Column(Integer, nullable=False, server_default='0')
 
-    # Preferences
-    preferences = Column(JSONB, default=dict, nullable=False)
-    # Example preferences: {"notifications_enabled": true, "theme": "light", "language": "en"}
-
-    # Metadata
+    # Preferences and metadata
+    preferences = Column(JSONB, nullable=False, server_default='{}')
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
@@ -63,28 +62,33 @@ class User(Base):
         return f"<User {self.email} ({self.role})>"
 
     @property
+    def id(self):
+        """Alias for user_id for compatibility"""
+        return self.user_id
+
+    @property
     def is_admin(self) -> bool:
         """Check if user is admin"""
-        return self.role == UserRole.ADMIN
+        return self.role in ['admin', UserRole.ADMIN.value]
 
     @property
     def is_manager(self) -> bool:
         """Check if user is manager or admin"""
-        return self.role in [UserRole.ADMIN, UserRole.MANAGER]
+        return self.role in ['admin', 'manager', UserRole.ADMIN.value, UserRole.MANAGER.value]
 
     def to_dict(self):
         """Convert to dictionary"""
         return {
-            "id": str(self.id),
+            "id": str(self.user_id),
             "email": self.email,
             "username": self.username,
-            "full_name": self.full_name,
+            "full_name": self.full_name or self.name,  # Fallback to name if full_name not set
             "avatar_url": self.avatar_url,
             "bio": self.bio,
             "phone": self.phone,
             "department": self.department,
             "job_title": self.job_title,
-            "role": self.role.value,
+            "role": self.role,
             "is_active": self.is_active,
             "is_verified": self.is_verified,
             "total_points": self.total_points,

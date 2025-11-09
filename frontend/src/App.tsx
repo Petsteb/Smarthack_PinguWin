@@ -1,5 +1,6 @@
 import { Routes, Route } from 'react-router-dom'
 import { Suspense, lazy } from 'react'
+import { ProtectedRoute, AdminRoute } from './components/auth/ProtectedRoute'
 
 // Lazy load pages
 const HomePage = lazy(() => import('./pages/HomePage'))
@@ -8,6 +9,8 @@ const BookingsPage = lazy(() => import('./pages/BookingsPage'))
 const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 const ProfilePage = lazy(() => import('./pages/ProfilePage'))
 const AdminPage = lazy(() => import('./pages/AdminPage'))
+const LoginPage = lazy(() => import('./pages/LoginPage'))
+const RegisterPage = lazy(() => import('./pages/RegisterPage'))
 
 // Loading component
 const LoadingFallback = () => (
@@ -21,12 +24,54 @@ function App() {
     <div className="min-h-screen bg-background">
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
+          {/* Public routes */}
           <Route path="/" element={<HomePage />} />
-          <Route path="/floor-plan" element={<FloorPlanPage />} />
-          <Route path="/bookings" element={<BookingsPage />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/admin" element={<AdminPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+
+          {/* Protected routes */}
+          <Route
+            path="/floor-plan"
+            element={
+              <ProtectedRoute>
+                <FloorPlanPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/bookings"
+            element={
+              <ProtectedRoute>
+                <BookingsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <DashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <ProfilePage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Admin only routes */}
+          <Route
+            path="/admin"
+            element={
+              <AdminRoute>
+                <AdminPage />
+              </AdminRoute>
+            }
+          />
         </Routes>
       </Suspense>
     </div>

@@ -16,7 +16,11 @@
       "Bash(npm run dev:*)",
       "Bash(python -c:*)",
       "Bash(dir \"C:\\Users\\petst\\OneDrive\\Desktop\\SH PinguWin\\Smarthack_PinguWin\")",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(dir:*)",
+      "Bash(echo:*)",
+      "Bash(\"C:\\Users\\petst\\OneDrive\\Desktop\\SH PinguWin\\Smarthack_PinguWin\\frontend\\.env.example\")",
+      "Bash(\"C:\\Users\\petst\\OneDrive\\Desktop\\SH PinguWin\\Smarthack_PinguWin\\backend\\.env.example\")"
     ],
     "deny": [],
     "ask": []

@@ -251,6 +251,27 @@ export default function FloorPlanPage() {
                 </div>
               )}
 
+              {selectedObjectData.chairsNormal && selectedObjectData.chairsNormal.length > 0 && (
+                <div>
+                  <label className="text-sm font-semibold text-gray-600">Chairs (Normal)</label>
+                  <p className="text-gray-900">{selectedObjectData.chairsNormal.length} chair(s)</p>
+                </div>
+              )}
+
+              {selectedObjectData.chairsElipsa && selectedObjectData.chairsElipsa.length > 0 && (
+                <div>
+                  <label className="text-sm font-semibold text-gray-600">Chairs (Elipsa)</label>
+                  <p className="text-gray-900">{selectedObjectData.chairsElipsa.length} chair(s)</p>
+                </div>
+              )}
+
+              {selectedObjectData.chairsEvantai && selectedObjectData.chairsEvantai.length > 0 && (
+                <div>
+                  <label className="text-sm font-semibold text-gray-600">Chairs (Evantai)</label>
+                  <p className="text-gray-900">{selectedObjectData.chairsEvantai.length} chair(s)</p>
+                </div>
+              )}
+
               {selectedObjectData.tables && selectedObjectData.tables.length > 0 && (
                 <div>
                   <label className="text-sm font-semibold text-gray-600">Tables</label>
