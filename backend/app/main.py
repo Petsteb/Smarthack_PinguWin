@@ -96,15 +96,14 @@ async def root():
 
 
 # Import and register routers
-from app.routes import auth, users
+from app.routes import auth, users, bookings
 
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
+app.include_router(bookings.router, prefix="/api/bookings", tags=["Bookings"])
 
 # TODO: Import additional routers as they are created
-# from app.routes import rooms, bookings, statistics, gamification
-# app.include_router(rooms.router, prefix="/api/rooms", tags=["Rooms"])
-# app.include_router(bookings.router, prefix="/api/bookings", tags=["Bookings"])
+# from app.routes import statistics, gamification
 # app.include_router(statistics.router, prefix="/api/statistics", tags=["Statistics"])
 # app.include_router(gamification.router, prefix="/api/gamification", tags=["Gamification"])
 

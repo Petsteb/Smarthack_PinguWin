@@ -1,5 +1,6 @@
 from sqlalchemy import Column, String, Boolean, DateTime, Integer, BigInteger, Enum as SQLEnum, Text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from datetime import datetime
 import uuid
@@ -57,6 +58,9 @@ class User(Base):
     )
     last_login = Column(DateTime(timezone=True), nullable=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Relationships
+    bookings = relationship("Booking", back_populates="user")
 
     def __repr__(self):
         return f"<User {self.email} ({self.role})>"

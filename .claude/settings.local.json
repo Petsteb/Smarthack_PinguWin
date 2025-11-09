@@ -20,7 +20,12 @@
       "Bash(dir:*)",
       "Bash(echo:*)",
       "Bash(\"C:\\Users\\petst\\OneDrive\\Desktop\\SH PinguWin\\Smarthack_PinguWin\\frontend\\.env.example\")",
-      "Bash(\"C:\\Users\\petst\\OneDrive\\Desktop\\SH PinguWin\\Smarthack_PinguWin\\backend\\.env.example\")"
+      "Bash(\"C:\\Users\\petst\\OneDrive\\Desktop\\SH PinguWin\\Smarthack_PinguWin\\backend\\.env.example\")",
+      "Bash(taskkill:*)",
+      "Bash(timeout /t 2 /nobreak)",
+      "Bash(python -m uvicorn:*)",
+      "Bash(timeout /t 5 /nobreak)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []

@@ -4,6 +4,8 @@ import { ArrowLeft, Info } from 'lucide-react';
 import { FloorPlanViewer3D } from '@/components/3d/FloorPlanViewer3D';
 import { FloorData } from '@/types';
 import BookingCalendar from '@/components/Calendar';
+import { bookingService, formatDateForAPI, createBookingRequest } from '@/services/booking';
+import type { AvailabilityResponse, Room, Desk } from '@/services/booking';
 
 export default function FloorPlanPage() {
   const [selectedObject, setSelectedObject] = useState<string | null>(null);
@@ -11,6 +13,11 @@ export default function FloorPlanPage() {
   const [floorData, setFloorData] = useState<FloorData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [availability, setAvailability] = useState<AvailabilityResponse | null>(null);
+  const [loadingAvailability, setLoadingAvailability] = useState(false);
+  const [bookingMessage, setBookingMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [resourceInfo, setResourceInfo] = useState<{ type: 'desk' | 'room', id: number } | null>(null);
 
   // Load floor plan data
   useEffect(() => {
@@ -28,9 +35,61 @@ export default function FloorPlanPage() {
   }, []);
 
   // Handle object selection
-  const handleObjectClick = (objectName: string, objectType: string) => {
+  const handleObjectClick = async (objectName: string, objectType: string) => {
     setSelectedObject(objectName);
     setSelectedObjectType(objectType);
+    setBookingMessage(null);
+    setAvailability(null);
+    setResourceInfo(null);
+
+    // Try to match the selected object to a resource in the database
+    // For desks: "desk-0" to "desk-191"
+    // For rooms: "managementRoom-0", "teamMeetings-small-0", etc.
+    const deskMatch = objectName.match(/^desk-(\d+)$/);
+    const roomMatch = objectName.match(/^(managementRoom|beerPoint|billiard|wellbeing|trainingRoom\d+|teamMeetings-[\w-]+)-(\d+)$/) ||
+      objectName.match(/^(managementRoom|beerPoint|billiard|wellbeing|trainingRoom\d+)$/);
+
+    if (deskMatch) {
+      const deskIndex = parseInt(deskMatch[1]);
+      setResourceInfo({ type: 'desk', id: deskIndex + 1 }); // Database IDs start at 1
+      await fetchAvailability('desk', deskIndex + 1, new Date());
+    } else if (roomMatch || objectName.includes('teamMeetings')) {
+      // For rooms, we need to fetch from the database to get the correct ID
+      await fetchRoomInfo(objectName);
+    }
+  };
+
+  // Fetch room info from database
+  const fetchRoomInfo = async (roomName: string) => {
+    try {
+      const rooms = await bookingService.getAllRooms();
+      const room = rooms.find(r => r.name === roomName);
+      if (room) {
+        setResourceInfo({ type: 'room', id: room.id });
+        await fetchAvailability('room', room.id, new Date());
+      }
+    } catch (error) {
+      console.error('Error fetching room info:', error);
+    }
+  };
+
+  // Fetch availability for a resource
+  const fetchAvailability = async (resourceType: 'desk' | 'room', resourceId: number, date: Date) => {
+    setLoadingAvailability(true);
+    try {
+      const dateStr = formatDateForAPI(date);
+      const availabilityData = await bookingService.checkAvailability(resourceType, resourceId, dateStr);
+      setAvailability(availabilityData);
+      setSelectedDate(date);
+    } catch (error: any) {
+      console.error('Error fetching availability:', error);
+      setBookingMessage({
+        type: 'error',
+        text: error.response?.data?.detail || 'Failed to load availability'
+      });
+    } finally {
+      setLoadingAvailability(false);
+    }
   };
 
   // Get counts
@@ -166,11 +225,47 @@ export default function FloorPlanPage() {
 
   const selectedObjectData = getSelectedObjectData();
 
-  const handleBooking = (date: Date, time: string) => {
-    //booking logic
+  const handleBooking = async (date: Date, time: string) => {
+    if (!resourceInfo) {
+      setBookingMessage({ type: 'error', text: 'No resource selected' });
+      return;
+    }
+
+    try {
+      // Calculate end time (1 hour later by default)
+      const [hours, minutes] = time.split(':').map(Number);
+      const endHours = hours + 1;
+      const endTime = `${endHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+
+      const bookingRequest = createBookingRequest(
+        resourceInfo.type,
+        resourceInfo.id,
+        date,
+        time,
+        endTime
+      );
+
+      await bookingService.createBooking(bookingRequest);
+
+      setBookingMessage({
+        type: 'success',
+        text: `Successfully booked ${availability?.resource_name || 'resource'} for ${time}-${endTime}`
+      });
+
+      // Refresh availability
+      await fetchAvailability(resourceInfo.type, resourceInfo.id, date);
+    } catch (error: any) {
+      console.error('Error creating booking:', error);
+      setBookingMessage({
+        type: 'error',
+        text: error.response?.data?.detail || 'Failed to create booking'
+      });
+    }
   };
-  let allAvailableHours = ['8:00', '8:30', '9:00', '...complete the rest'];
-  let occupiedHours = ['8:00']; // get from database whe it's busy
+
+  const allAvailableHours = availability?.all_slots || [];
+  const occupiedHours = availability?.booked_slots || [];
+  console.log(occupiedHours);
 
   return (
     <div className="h-screen flex flex-col bg-gray-100">
@@ -236,11 +331,31 @@ export default function FloorPlanPage() {
               </div>
 
               <div>
-                <label className="text-sm font-semibold text-gray-600">Calendar</label>
-                <BookingCalendar
-                  onBook={handleBooking}
-                  allAvailableHours={allAvailableHours}
-                  bookedHours={occupiedHours}></BookingCalendar>
+                <label className="text-sm font-semibold text-gray-600 mb-2 block">Book This Space</label>
+
+                {bookingMessage && (
+                  <div className={`mb-4 p-3 rounded-lg ${bookingMessage.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                    }`}>
+                    {bookingMessage.text}
+                  </div>
+                )}
+
+                {loadingAvailability ? (
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                    <p className="mt-2 text-gray-600">Loading availability...</p>
+                  </div>
+                ) : availability ? (
+                  <BookingCalendar
+                    onBook={handleBooking}
+                    allAvailableHours={allAvailableHours}
+                    bookedHours={occupiedHours}
+                  />
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <p>This space is not available for booking</p>
+                  </div>
+                )}
               </div>
 
               {/* {selectedObjectData.space && selectedObjectData.space.length > 0 && (
