@@ -46,6 +46,8 @@ export interface Desk {
   id: number;
   position_name: string;
   occupied: boolean;
+  x: number,
+  y: number
 }
 
 export interface Room {
@@ -98,6 +100,10 @@ export const bookingService = {
     });
     return response.data;
   },
+
+
+
+
 
   /**
    * Get a specific booking by ID

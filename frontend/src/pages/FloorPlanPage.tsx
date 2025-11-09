@@ -51,12 +51,13 @@ export default function FloorPlanPage() {
 
     if (deskMatch) {
       const deskIndex = parseInt(deskMatch[1]);
-      setResourceInfo({ type: 'desk', id: deskIndex + 1 }); // Database IDs start at 1
+      setResourceInfo({ type: 'desk', id: deskIndex }); // Database IDs start at 1
       await fetchAvailability('desk', deskIndex + 1, new Date());
-    } else if (roomMatch || objectName.includes('teamMeetings')) {
-      // For rooms, we need to fetch from the database to get the correct ID
-      await fetchRoomInfo(objectName);
     }
+    // else if (roomMatch || objectName.includes('teamMeetings')) {
+    //   // For rooms, we need to fetch from the database to get the correct ID
+    //   await fetchRoomInfo(objectName);
+    // }
   };
 
   // Fetch room info from database
@@ -225,7 +226,9 @@ export default function FloorPlanPage() {
 
   const selectedObjectData = getSelectedObjectData();
 
+
   const handleBooking = async (date: Date, time: string) => {
+
     if (!resourceInfo) {
       setBookingMessage({ type: 'error', text: 'No resource selected' });
       return;
@@ -261,6 +264,7 @@ export default function FloorPlanPage() {
         text: error.response?.data?.detail || 'Failed to create booking'
       });
     }
+
   };
 
   const allAvailableHours = availability?.all_slots || [];

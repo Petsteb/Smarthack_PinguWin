@@ -261,7 +261,6 @@ async def check_availability(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="resource_type must be 'desk' or 'room'"
         )
-
     return await booking_service.get_availability(
         resource_type=resource_type,
         resource_id=resource_id,
