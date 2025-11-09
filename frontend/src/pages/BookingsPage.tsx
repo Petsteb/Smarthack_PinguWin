@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowLeft, Calendar, Clock, MapPin, X, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Calendar, Clock, MapPin, X, AlertCircle, CheckCircle, Loader2, Navigation } from 'lucide-react';
 import { bookingService, Booking } from '../services/booking';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -8,6 +8,7 @@ type FilterType = 'all' | 'upcoming' | 'active' | 'past' | 'pending';
 
 export default function BookingsPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +51,19 @@ export default function BookingsPage() {
     } finally {
       setCancellingId(null);
     }
+  };
+
+  const handleNavigateToBooking = (booking: Booking) => {
+    // Navigate to floor plan with navigation state
+    navigate('/floor-plan', {
+      state: {
+        navigateToResource: {
+          type: booking.resource_type,
+          id: booking.resource_type === 'desk' ? booking.desk_id : booking.room_id,
+          name: booking.resource_name,
+        }
+      }
+    });
   };
 
   const filteredBookings = bookings.filter(booking => {
@@ -263,25 +277,38 @@ export default function BookingsPage() {
                       </div>
 
                       {/* Right Side - Actions */}
-                      {canCancel && (
+                      <div className="flex flex-col gap-2">
+                        {/* Navigate Button */}
                         <button
-                          onClick={() => handleCancelBooking(booking.id)}
-                          disabled={cancellingId === booking.id}
-                          className="flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                          onClick={() => handleNavigateToBooking(booking)}
+                          className="flex items-center gap-2 px-4 py-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-blue-200"
+                          title="Navigate to this location in 3D view"
                         >
-                          {cancellingId === booking.id ? (
-                            <>
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                              <span>Cancelling...</span>
-                            </>
-                          ) : (
-                            <>
-                              <X className="w-4 h-4" />
-                              <span>Cancel</span>
-                            </>
-                          )}
+                          <Navigation className="w-4 h-4" />
+                          <span>Navigate</span>
                         </button>
-                      )}
+
+                        {/* Cancel Button */}
+                        {canCancel && (
+                          <button
+                            onClick={() => handleCancelBooking(booking.id)}
+                            disabled={cancellingId === booking.id}
+                            className="flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {cancellingId === booking.id ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span>Cancelling...</span>
+                              </>
+                            ) : (
+                              <>
+                                <X className="w-4 h-4" />
+                                <span>Cancel</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

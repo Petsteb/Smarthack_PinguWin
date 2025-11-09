@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { ArrowLeft, Info, Navigation as NavIcon } from 'lucide-react';
 import { FloorPlanViewer3D } from '@/components/3d/FloorPlanViewer3D';
 import { FloorData } from '@/types';
@@ -10,7 +10,17 @@ import type { AvailabilityResponse, Room, Desk } from '@/services/booking';
 const FLOOR_CENTER_X = 89.6;
 const FLOOR_CENTER_Z = 39.6;
 
+interface LocationState {
+  navigateToResource?: {
+    type: 'desk' | 'room';
+    id: number;
+    name: string;
+  };
+}
+
 export default function FloorPlanPage() {
+  const location = useLocation();
+  const state = location.state as LocationState;
   const [selectedObject, setSelectedObject] = useState<string | null>(null);
   const [selectedObjectType, setSelectedObjectType] = useState<string | null>(null);
   const [floorData, setFloorData] = useState<FloorData | null>(null);
@@ -29,6 +39,7 @@ export default function FloorPlanPage() {
     z: FLOOR_CENTER_Z,
   });
   const [navigationDestination, setNavigationDestination] = useState<{ x: number; z: number } | null>(null);
+  const [autoNavigationMessage, setAutoNavigationMessage] = useState<string | null>(null);
 
   // Load floor plan data
   useEffect(() => {
@@ -45,9 +56,62 @@ export default function FloorPlanPage() {
       });
   }, []);
 
+  // Handle navigation from bookings page
+  useEffect(() => {
+    if (!floorData || !state?.navigateToResource) return;
+
+    // Check if floorData actually has data loaded
+    const hasData = Object.keys(floorData).length > 0;
+    if (!hasData) {
+      console.log('⏳ Waiting for floor data to load...');
+      return;
+    }
+
+    console.log('🎯 Navigation requested from bookings:', state.navigateToResource);
+
+    // Enable navigation mode
+    setNavigationEnabled(true);
+
+    // Calculate the object name from the resource
+    const { type, id } = state.navigateToResource;
+    let objectName = '';
+
+    if (type === 'desk') {
+      // Desk IDs in the database are 1-based, but our desk names are 0-based
+      console.log(`📋 Database desk ID: ${id} (converting to desk-${id - 1})`);
+      objectName = `desk-${id - 1}`;
+    } else if (type === 'room') {
+      // For rooms, we need to figure out the room name
+      // This is a simplified version - you may need to adjust based on your room naming
+      console.log(`📋 Room name: ${state.navigateToResource.name}`);
+      objectName = state.navigateToResource.name;
+    }
+
+    console.log('📍 Navigating to object:', objectName);
+
+    // Get the position and set destination
+    const destination = getObjectPosition(objectName);
+    if (destination) {
+      setNavigationDestination(destination);
+      setSelectedObject(objectName);
+      setAutoNavigationMessage(`Navigating to ${state.navigateToResource.name}`);
+      console.log('✅ Destination set:', destination);
+
+      // Clear message after 5 seconds
+      setTimeout(() => setAutoNavigationMessage(null), 5000);
+    } else {
+      console.warn('❌ Could not find position for', objectName);
+      setAutoNavigationMessage(`Could not find ${state.navigateToResource.name}`);
+      setTimeout(() => setAutoNavigationMessage(null), 5000);
+    }
+  }, [floorData, state]);
+
   // Calculate destination position for navigation
   const getObjectPosition = (objectName: string): { x: number; z: number } | null => {
-    if (!floorData) return null;
+    if (!floorData || Object.keys(floorData).length === 0) {
+      console.warn('⚠️ Floor data not loaded yet');
+      return null;
+    }
 
     const scale = 0.05;
 
@@ -55,7 +119,10 @@ export default function FloorPlanPage() {
     const deskMatch = objectName.match(/^desk-(\d+)$/);
     if (deskMatch) {
       const deskIndex = parseInt(deskMatch[1]);
-      console.log(`Looking for desk index ${deskIndex}`);
+      console.log(`🔍 Looking for desk index ${deskIndex}`);
+
+      // Debug: Log all keys in floorData
+      console.log('🗂️ All keys in floorData:', Object.keys(floorData));
 
       // Find the desk across all desk groups (must be in order: desks1, desks2, etc.)
       let currentIndex = 0;
@@ -63,9 +130,20 @@ export default function FloorPlanPage() {
         .filter(([name]) => name.startsWith('desks'))
         .sort((a, b) => a[0].localeCompare(b[0])); // Sort to ensure order
 
+      console.log(`📊 Found ${deskGroups.length} desk groups:`, deskGroups.map(([name]) => name));
+
+      // Debug: Also check for any key containing "desk"
+      const anyDeskKeys = Object.keys(floorData).filter(k => k.toLowerCase().includes('desk'));
+      console.log(`🔎 Keys containing "desk":`, anyDeskKeys);
+
       for (const [name, data] of deskGroups) {
         if (data.tables && Array.isArray(data.tables)) {
-          console.log(`Checking ${name}, has ${data.tables.length} desks, current index: ${currentIndex}`);
+          const groupSize = data.tables.length;
+          const rangeStart = currentIndex;
+          const rangeEnd = currentIndex + groupSize - 1;
+
+          console.log(`📦 ${name}: ${groupSize} desks (indices ${rangeStart}-${rangeEnd})`);
+
           for (const table of data.tables) {
             if (currentIndex === deskIndex) {
               // Found the desk!
@@ -80,7 +158,9 @@ export default function FloorPlanPage() {
           }
         }
       }
-      console.warn(`❌ Desk ${deskIndex} not found in any desk group`);
+
+      console.warn(`❌ Desk ${deskIndex} not found. Total desks available: ${currentIndex}`);
+      console.warn(`💡 Hint: Desk IDs range from 0 to ${currentIndex - 1}`);
       return null;
     }
 
@@ -439,6 +519,22 @@ export default function FloorPlanPage() {
           </div>
         </div>
       </header>
+
+      {/* Auto-Navigation Message */}
+      {autoNavigationMessage && (
+        <div className="bg-blue-50 border-b border-blue-200 px-4 py-3 z-10">
+          <div className="flex items-center gap-3 max-w-7xl mx-auto">
+            <NavIcon className="w-5 h-5 text-blue-600 flex-shrink-0" />
+            <p className="text-blue-800 font-medium">{autoNavigationMessage}</p>
+            <button
+              onClick={() => setAutoNavigationMessage(null)}
+              className="ml-auto text-blue-600 hover:text-blue-800"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Content - FloorPlanViewer3D now includes the filter panel */}
       <div className="flex-1 overflow-hidden">
