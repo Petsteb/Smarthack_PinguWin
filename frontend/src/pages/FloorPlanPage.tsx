@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft, Info } from 'lucide-react';
 import { FloorPlanViewer3D } from '@/components/3d/FloorPlanViewer3D';
 import { FloorData } from '@/types';
+import BookingCalendar from '@/components/Calendar';
 
 export default function FloorPlanPage() {
   const [selectedObject, setSelectedObject] = useState<string | null>(null);
@@ -165,6 +166,12 @@ export default function FloorPlanPage() {
 
   const selectedObjectData = getSelectedObjectData();
 
+  const handleBooking = (date: Date, time: string) => {
+    //booking logic
+  };
+  let allAvailableHours = ['8:00', '8:30', '9:00', '...complete the rest'];
+  let occupiedHours = ['8:00']; // get from database whe it's busy
+
   return (
     <div className="h-screen flex flex-col bg-gray-100">
       {/* Header */}
@@ -203,7 +210,7 @@ export default function FloorPlanPage() {
         <div className="absolute right-0 top-16 bottom-0 w-96 bg-white shadow-2xl overflow-y-auto z-20">
           <div className="p-6">
             <div className="flex items-start justify-between mb-4">
-              <h2 className="text-xl font-bold text-gray-900">Object Details</h2>
+              <h2 className="text-xl font-bold text-gray-900">Details</h2>
               <button
                 onClick={() => {
                   setSelectedObject(null);
@@ -228,7 +235,15 @@ export default function FloorPlanPage() {
                 </p>
               </div>
 
-              {selectedObjectData.space && selectedObjectData.space.length > 0 && (
+              <div>
+                <label className="text-sm font-semibold text-gray-600">Calendar</label>
+                <BookingCalendar
+                  onBook={handleBooking}
+                  allAvailableHours={allAvailableHours}
+                  bookedHours={occupiedHours}></BookingCalendar>
+              </div>
+
+              {/* {selectedObjectData.space && selectedObjectData.space.length > 0 && (
                 <div>
                   <label className="text-sm font-semibold text-gray-600">Space Rectangles</label>
                   <p className="text-gray-900">{selectedObjectData.space.length} rectangle(s)</p>
@@ -277,7 +292,7 @@ export default function FloorPlanPage() {
                   <label className="text-sm font-semibold text-gray-600">Tables</label>
                   <p className="text-gray-900">{selectedObjectData.tables.length} table(s)</p>
                 </div>
-              )}
+              )} */}
 
               {selectedObjectData.room === 1 && (
                 <div className="pt-4 border-t">
@@ -295,7 +310,7 @@ export default function FloorPlanPage() {
                 </div>
               )}
 
-              <div className="pt-4 border-t">
+              {/* <div className="pt-4 border-t">
                 <label className="text-sm font-semibold text-gray-600 mb-2 block">
                   Additional Info
                 </label>
@@ -304,7 +319,7 @@ export default function FloorPlanPage() {
                     ? 'This is a room area marked on the floor with a colored rectangle.'
                     : 'This object is rendered using 3D meshes based on its type.'}
                 </p>
-              </div>
+              </div> */}
             </div>
           </div>
         </div>
