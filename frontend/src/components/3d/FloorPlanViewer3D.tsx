@@ -3,11 +3,25 @@ import { Grid, Environment } from '@react-three/drei';
 import { Suspense, useState, useEffect, useMemo, useRef } from 'react';
 import { FloorData, MeshConfiguration, Rectangle } from '@/types';
 import * as THREE from 'three';
-import { Check, X, ChevronLeft, ChevronRight, ChevronUp, ChevronDown } from 'lucide-react';
+import { Check, X, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Navigation } from 'lucide-react';
+import { Avatar } from './Avatar';
+import { PathLine } from './PathLine';
+import {
+  createGrid,
+  findPath,
+  simplifyPath,
+  Point2D,
+  ObstacleRect,
+  GridNode,
+} from '@/utils/pathfinding';
 
 interface FloorPlanViewer3DProps {
   onObjectClick?: (objectName: string, objectType: string) => void;
   selectedObject?: string | null;
+  navigationEnabled?: boolean;
+  navigationDestination?: { x: number; z: number } | null;
+  onAvatarPositionChange?: (x: number, z: number) => void;
+  avatarPosition?: { x: number; z: number };
 }
 
 // Predefined room colors for visual distinction
@@ -97,6 +111,10 @@ const CAMERA_POSITIONS_BIRD = [
 export function FloorPlanViewer3D({
   onObjectClick,
   selectedObject,
+  navigationEnabled = false,
+  navigationDestination = null,
+  onAvatarPositionChange,
+  avatarPosition,
 }: FloorPlanViewer3DProps) {
   const [floorData, setFloorData] = useState<FloorData | null>(null);
   const [meshConfig, setMeshConfig] = useState<MeshConfiguration | null>(null);
@@ -121,6 +139,10 @@ export function FloorPlanViewer3D({
   // Zoom state (100% = base, 50% min, 200% max)
   const [zoomLevel, setZoomLevel] = useState(100);
 
+  // Navigation state
+  const [pathfindingGrid, setPathfindingGrid] = useState<GridNode[][] | null>(null);
+  const [currentPath, setCurrentPath] = useState<Point2D[] | null>(null);
+
   // Load all required data
   useEffect(() => {
     Promise.all([
@@ -142,6 +164,113 @@ export function FloorPlanViewer3D({
         setLoading(false);
       });
   }, []);
+
+  // Create pathfinding grid from obstacles (walls and furniture)
+  useEffect(() => {
+    if (!floorData || !navigationEnabled) return;
+
+    const scale = 0.05;
+    const obstacles: ObstacleRect[] = [];
+
+    // Add walls as obstacles
+    if (floorData.walls) {
+      const wallsData = floorData.walls as any;
+
+      // Add interior walls
+      if (wallsData.interior && Array.isArray(wallsData.interior)) {
+        wallsData.interior.forEach((wall: Rectangle) => {
+          obstacles.push({
+            x: wall.x * scale,
+            z: wall.y * scale,
+            width: wall.width * scale,
+            height: wall.height * scale,
+          });
+        });
+      }
+
+      // Add exterior walls
+      if (wallsData.exterior && Array.isArray(wallsData.exterior)) {
+        wallsData.exterior.forEach((wall: Rectangle) => {
+          obstacles.push({
+            x: wall.x * scale,
+            z: wall.y * scale,
+            width: wall.width * scale,
+            height: wall.height * scale,
+          });
+        });
+      }
+    }
+
+    // Add furniture as obstacles (tables, chairs, desks)
+    Object.entries(floorData).forEach(([name, data]) => {
+      if (name === 'walls' || !data) return;
+
+      // Add tables
+      if (data.tables && Array.isArray(data.tables)) {
+        data.tables.forEach((table: Rectangle) => {
+          obstacles.push({
+            x: table.x * scale,
+            z: table.y * scale,
+            width: table.width * scale,
+            height: table.height * scale,
+          });
+        });
+      }
+
+      // Note: We don't add desks as obstacles since they're navigable
+      // Note: We don't add chairs as obstacles to allow more flexible paths
+    });
+
+    // Calculate floor bounds
+    const bounds = {
+      minX: 297 * scale,
+      maxX: 3286.75 * scale,
+      minZ: 312.51 * scale,
+      maxZ: 1270.1 * scale,
+    };
+
+    // Create grid (2 units per cell = manageable grid size)
+    const gridSize = 2;
+    const grid = createGrid(gridSize, bounds, obstacles);
+    setPathfindingGrid(grid);
+
+    console.log(`Created pathfinding grid: ${grid.length}x${grid[0]?.length || 0} cells, ${obstacles.length} obstacles`);
+  }, [floorData, navigationEnabled]);
+
+  // Calculate path when destination or avatar position changes
+  useEffect(() => {
+    console.log('Pathfinding effect triggered', {
+      hasGrid: !!pathfindingGrid,
+      destination: navigationDestination,
+      avatarPos: avatarPosition,
+    });
+
+    if (!pathfindingGrid || !navigationDestination || !avatarPosition) {
+      console.log('Missing requirements for pathfinding');
+      setCurrentPath(null);
+      return;
+    }
+
+    console.log('Calculating path from', avatarPosition, 'to', navigationDestination);
+
+    const path = findPath(
+      pathfindingGrid,
+      avatarPosition.x,
+      avatarPosition.z,
+      navigationDestination.x,
+      navigationDestination.z
+    );
+
+    if (path) {
+      // Simplify path to reduce waypoints
+      const simplifiedPath = simplifyPath(path, 1.0);
+      setCurrentPath(simplifiedPath);
+      console.log(`✅ Path found: ${simplifiedPath.length} waypoints`, simplifiedPath);
+    } else {
+      setCurrentPath(null);
+      console.warn('❌ No path found to destination');
+    }
+  }, [pathfindingGrid, navigationDestination, avatarPosition]);
 
   // Camera navigation functions
   const rotateLeft = () => {
@@ -414,6 +543,20 @@ export function FloorPlanViewer3D({
               onHover={setHoveredObject}
             />
           </Suspense>
+
+          {/* Navigation: Avatar and Path */}
+          {navigationEnabled && avatarPosition && (
+            <>
+              <Avatar
+                position={[avatarPosition.x, 1, avatarPosition.z]}
+                onPositionChange={(x, z) => {
+                  onAvatarPositionChange?.(x, z);
+                }}
+                enabled={navigationEnabled}
+              />
+              {currentPath && <PathLine path={currentPath} />}
+            </>
+          )}
 
           {/* Camera Controls */}
           <CameraController

@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { User, LogOut, LogIn, UserPlus, ChevronDown } from 'lucide-react';
+import { User, LogOut, LogIn, UserPlus, ChevronDown, Calendar, LayoutDashboard, Settings } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 
 export default function Navigation() {
@@ -97,7 +97,7 @@ export default function Navigation() {
                           onClick={() => setIsDropdownOpen(false)}
                           className="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition"
                         >
-                          <User size={16} />
+                          <LayoutDashboard size={16} />
                           Dashboard
                         </Link>
 
@@ -106,7 +106,7 @@ export default function Navigation() {
                           onClick={() => setIsDropdownOpen(false)}
                           className="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition"
                         >
-                          <User size={16} />
+                          <Calendar size={16} />
                           My Bookings
                         </Link>
 
@@ -116,7 +116,7 @@ export default function Navigation() {
                             onClick={() => setIsDropdownOpen(false)}
                             className="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition"
                           >
-                            <User size={16} />
+                            <Settings size={16} />
                             Admin Panel
                           </Link>
                         )}

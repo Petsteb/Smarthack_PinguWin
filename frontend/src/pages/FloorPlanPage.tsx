@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Info } from 'lucide-react';
+import { ArrowLeft, Info, Navigation as NavIcon } from 'lucide-react';
 import { FloorPlanViewer3D } from '@/components/3d/FloorPlanViewer3D';
 import { FloorData } from '@/types';
 import BookingCalendar from '@/components/Calendar';
 import { bookingService, formatDateForAPI, createBookingRequest } from '@/services/booking';
 import type { AvailabilityResponse, Room, Desk } from '@/services/booking';
+
+const FLOOR_CENTER_X = 89.6;
+const FLOOR_CENTER_Z = 39.6;
 
 export default function FloorPlanPage() {
   const [selectedObject, setSelectedObject] = useState<string | null>(null);
@@ -18,6 +21,14 @@ export default function FloorPlanPage() {
   const [bookingMessage, setBookingMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [resourceInfo, setResourceInfo] = useState<{ type: 'desk' | 'room', id: number } | null>(null);
+
+  // Navigation state
+  const [navigationEnabled, setNavigationEnabled] = useState(false);
+  const [avatarPosition, setAvatarPosition] = useState<{ x: number; z: number }>({
+    x: FLOOR_CENTER_X,
+    z: FLOOR_CENTER_Z,
+  });
+  const [navigationDestination, setNavigationDestination] = useState<{ x: number; z: number } | null>(null);
 
   // Load floor plan data
   useEffect(() => {
@@ -33,6 +44,121 @@ export default function FloorPlanPage() {
         setLoading(false);
       });
   }, []);
+
+  // Calculate destination position for navigation
+  const getObjectPosition = (objectName: string): { x: number; z: number } | null => {
+    if (!floorData) return null;
+
+    const scale = 0.05;
+
+    // Handle individual desks (desk-0, desk-1, etc.)
+    const deskMatch = objectName.match(/^desk-(\d+)$/);
+    if (deskMatch) {
+      const deskIndex = parseInt(deskMatch[1]);
+      console.log(`Looking for desk index ${deskIndex}`);
+
+      // Find the desk across all desk groups (must be in order: desks1, desks2, etc.)
+      let currentIndex = 0;
+      const deskGroups = Object.entries(floorData)
+        .filter(([name]) => name.startsWith('desks'))
+        .sort((a, b) => a[0].localeCompare(b[0])); // Sort to ensure order
+
+      for (const [name, data] of deskGroups) {
+        if (data.tables && Array.isArray(data.tables)) {
+          console.log(`Checking ${name}, has ${data.tables.length} desks, current index: ${currentIndex}`);
+          for (const table of data.tables) {
+            if (currentIndex === deskIndex) {
+              // Found the desk!
+              const pos = {
+                x: (table.x + table.width / 2) * scale,
+                z: (table.y + table.height / 2) * scale,
+              };
+              console.log(`✅ Found desk ${deskIndex} in ${name} at position:`, pos);
+              return pos;
+            }
+            currentIndex++;
+          }
+        }
+      }
+      console.warn(`❌ Desk ${deskIndex} not found in any desk group`);
+      return null;
+    }
+
+    // Handle regular objects with direct names
+    const selectedData = floorData[objectName];
+    if (selectedData && selectedData.space && selectedData.space.length > 0) {
+      // Use the center of the first space rectangle
+      const space = selectedData.space[0];
+      return {
+        x: (space.x + space.width / 2) * scale,
+        z: (space.y + space.height / 2) * scale,
+      };
+    }
+
+    // For split rooms like managementRoom-0, teamMeetings-small-0, etc.
+    if (objectName.startsWith('managementRoom-')) {
+      const index = parseInt(objectName.split('-')[1]);
+      const managementData = floorData['managementRoom'];
+      if (managementData && managementData.space && managementData.space[index]) {
+        const space = managementData.space[index];
+        return {
+          x: (space.x + space.width / 2) * scale,
+          z: (space.y + space.height / 2) * scale,
+        };
+      }
+    }
+
+    if (objectName.startsWith('teamMeetings-')) {
+      const parts = objectName.replace('teamMeetings-', '').split('-');
+      const teamMeetingsData = floorData['teamMeetings'] as any;
+
+      if (parts.length === 2) {
+        // e.g., teamMeetings-small-0
+        const subKey = parts[0]; // "small"
+        const index = parseInt(parts[1]); // 0
+        const subData = teamMeetingsData?.[subKey];
+        if (subData && subData.space && subData.space[index]) {
+          const space = subData.space[index];
+          return {
+            x: (space.x + space.width / 2) * scale,
+            z: (space.y + space.height / 2) * scale,
+          };
+        }
+      } else if (parts.length === 1) {
+        // e.g., teamMeetings-round4
+        const subKey = parts[0];
+        const subData = teamMeetingsData?.[subKey];
+        if (subData && subData.space && subData.space[0]) {
+          const space = subData.space[0];
+          return {
+            x: (space.x + space.width / 2) * scale,
+            z: (space.y + space.height / 2) * scale,
+          };
+        }
+      }
+    }
+
+    console.warn(`Could not find position for ${objectName}`);
+    return null;
+  };
+
+  // Handle navigation to selected object
+  const handleNavigateToObject = () => {
+    if (!selectedObject) return;
+
+    console.log('Navigating to:', selectedObject);
+    const destination = getObjectPosition(selectedObject);
+    console.log('Destination position:', destination);
+    console.log('Avatar position:', avatarPosition);
+
+    if (destination) {
+      setNavigationDestination(destination);
+      setNavigationEnabled(true);
+      console.log('Navigation destination set:', destination);
+    } else {
+      console.warn('Could not calculate destination for', selectedObject);
+    }
+  };
 
   // Handle object selection
   const handleObjectClick = async (objectName: string, objectType: string) => {
@@ -288,6 +414,24 @@ export default function FloorPlanPage() {
           </div>
 
           <div className="flex items-center gap-4">
+            {/* Navigation Toggle (Dev Tool) */}
+            <button
+              onClick={() => {
+                setNavigationEnabled(!navigationEnabled);
+                if (navigationEnabled) {
+                  setNavigationDestination(null);
+                }
+              }}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                navigationEnabled
+                  ? 'bg-blue-600 text-white hover:bg-blue-700'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              <NavIcon size={18} />
+              <span>{navigationEnabled ? 'Navigation ON' : 'Navigation OFF'}</span>
+            </button>
+
             <div className="text-sm text-gray-600">
               <span className="font-semibold">{roomCount}</span> Rooms •{' '}
               <span className="font-semibold">{objectCount}</span> Objects
@@ -301,6 +445,10 @@ export default function FloorPlanPage() {
         <FloorPlanViewer3D
           onObjectClick={handleObjectClick}
           selectedObject={selectedObject}
+          navigationEnabled={navigationEnabled}
+          navigationDestination={navigationDestination}
+          avatarPosition={avatarPosition}
+          onAvatarPositionChange={(x, z) => setAvatarPosition({ x, z })}
         />
       </div>
 
@@ -333,6 +481,24 @@ export default function FloorPlanPage() {
                   {selectedObjectData.room === 1 ? 'Room' : selectedObjectType}
                 </p>
               </div>
+
+              {/* Navigation Button */}
+              {navigationEnabled && (
+                <div>
+                  <button
+                    onClick={handleNavigateToObject}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-medium hover:from-blue-600 hover:to-blue-700 transition-all shadow-md hover:shadow-lg"
+                  >
+                    <NavIcon size={20} />
+                    <span>Navigate to This Location</span>
+                  </button>
+                  {navigationDestination && (
+                    <p className="mt-2 text-xs text-gray-500 text-center">
+                      Path will update in real-time as you drag the avatar
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div>
                 <label className="text-sm font-semibold text-gray-600 mb-2 block">Book This Space</label>
