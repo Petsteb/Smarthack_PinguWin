@@ -1,9 +1,9 @@
-import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Grid, Environment } from '@react-three/drei';
-import { Suspense, useState, useEffect, useMemo } from 'react';
+import { Canvas, useThree, useFrame } from '@react-three/fiber';
+import { Grid, Environment } from '@react-three/drei';
+import { Suspense, useState, useEffect, useMemo, useRef } from 'react';
 import { FloorData, MeshConfiguration, Rectangle } from '@/types';
 import * as THREE from 'three';
-import { Check, X } from 'lucide-react';
+import { Check, X, ChevronLeft, ChevronRight, ChevronUp, ChevronDown } from 'lucide-react';
 
 interface FloorPlanViewer3DProps {
   onObjectClick?: (objectName: string, objectType: string) => void;
@@ -20,6 +20,66 @@ const ROOM_COLORS = [
   '#F7DC6F', // Yellow
   '#BB8FCE', // Purple
   '#F8B500', // Orange
+];
+
+// Fixed camera positions
+// Floor plan center (calculated from floor_data.json exterior walls)
+// X range: 297 to 3286.75, Y range: 312.51 to 1270.1
+// Center: (1791.875, 791.305) * scale 0.05 = (89.59, 39.57)
+const FLOOR_CENTER_X = 89.6;
+const FLOOR_CENTER_Z = 39.6;
+const CAMERA_DISTANCE = 120; // Closer to ground
+const ELEVATION_ANGLE = Math.PI / 4; // 45 degrees in radians
+
+// 4 fixed 3D viewpoints at 45° vertical, 90° horizontal increments, centered on floor plan
+const CAMERA_POSITIONS_3D = [
+  {
+    position: new THREE.Vector3(
+      FLOOR_CENTER_X + CAMERA_DISTANCE * Math.cos(ELEVATION_ANGLE) * Math.cos(0),
+      CAMERA_DISTANCE * Math.sin(ELEVATION_ANGLE),
+      FLOOR_CENTER_Z + CAMERA_DISTANCE * Math.cos(ELEVATION_ANGLE) * Math.sin(0)
+    ),
+    target: new THREE.Vector3(FLOOR_CENTER_X, 0, FLOOR_CENTER_Z),
+  },
+  {
+    position: new THREE.Vector3(
+      FLOOR_CENTER_X + CAMERA_DISTANCE * Math.cos(ELEVATION_ANGLE) * Math.cos(Math.PI / 2),
+      CAMERA_DISTANCE * Math.sin(ELEVATION_ANGLE),
+      FLOOR_CENTER_Z + CAMERA_DISTANCE * Math.cos(ELEVATION_ANGLE) * Math.sin(Math.PI / 2)
+    ),
+    target: new THREE.Vector3(FLOOR_CENTER_X, 0, FLOOR_CENTER_Z),
+  },
+  {
+    position: new THREE.Vector3(
+      FLOOR_CENTER_X + CAMERA_DISTANCE * Math.cos(ELEVATION_ANGLE) * Math.cos(Math.PI),
+      CAMERA_DISTANCE * Math.sin(ELEVATION_ANGLE),
+      FLOOR_CENTER_Z + CAMERA_DISTANCE * Math.cos(ELEVATION_ANGLE) * Math.sin(Math.PI)
+    ),
+    target: new THREE.Vector3(FLOOR_CENTER_X, 0, FLOOR_CENTER_Z),
+  },
+  {
+    position: new THREE.Vector3(
+      FLOOR_CENTER_X + CAMERA_DISTANCE * Math.cos(ELEVATION_ANGLE) * Math.cos(3 * Math.PI / 2),
+      CAMERA_DISTANCE * Math.sin(ELEVATION_ANGLE),
+      FLOOR_CENTER_Z + CAMERA_DISTANCE * Math.cos(ELEVATION_ANGLE) * Math.sin(3 * Math.PI / 2)
+    ),
+    target: new THREE.Vector3(FLOOR_CENTER_X, 0, FLOOR_CENTER_Z),
+  },
+];
+
+// Bird's eye view positions (top-down with 2 orientations) - much closer to ground
+const BIRD_EYE_HEIGHT = 100; // Lowered from 250 to 100
+const CAMERA_POSITIONS_BIRD = [
+  {
+    position: new THREE.Vector3(FLOOR_CENTER_X, BIRD_EYE_HEIGHT, FLOOR_CENTER_Z),
+    target: new THREE.Vector3(FLOOR_CENTER_X, 0, FLOOR_CENTER_Z),
+    up: new THREE.Vector3(0, 0, -1), // Horizontal orientation
+  },
+  {
+    position: new THREE.Vector3(FLOOR_CENTER_X, BIRD_EYE_HEIGHT, FLOOR_CENTER_Z),
+    target: new THREE.Vector3(FLOOR_CENTER_X, 0, FLOOR_CENTER_Z),
+    up: new THREE.Vector3(1, 0, 0), // Vertical orientation (90° rotated)
+  },
 ];
 
 /**
@@ -42,9 +102,18 @@ export function FloorPlanViewer3D({
   const [showRooms, setShowRooms] = useState(true);
   const [showWalls, setShowWalls] = useState(true);
   const [showExteriorWalls, setShowExteriorWalls] = useState(true);
+  const [showGrid, setShowGrid] = useState(true);
 
   // Hover state
   const [hoveredObject, setHoveredObject] = useState<string | null>(null);
+
+  // Camera view state
+  const [currentView3D, setCurrentView3D] = useState(0); // 0-3 for the 4 3D viewpoints
+  const [isBirdEyeView, setIsBirdEyeView] = useState(false); // false = 3D view, true = bird's eye
+  const [birdEyeOrientation, setBirdEyeOrientation] = useState(0); // 0 or 1 for horizontal/vertical
+
+  // Zoom state (100% = base, 50% min, 200% max)
+  const [zoomLevel, setZoomLevel] = useState(100);
 
   // Load all required data
   useEffect(() => {
@@ -67,6 +136,42 @@ export function FloorPlanViewer3D({
         setLoading(false);
       });
   }, []);
+
+  // Camera navigation functions
+  const rotateLeft = () => {
+    if (!isBirdEyeView) {
+      setCurrentView3D((prev) => (prev + 3) % 4); // Move counterclockwise
+    } else {
+      // In bird's eye view, rotate orientation
+      setBirdEyeOrientation((prev) => (prev + 1) % 2);
+    }
+  };
+
+  const rotateRight = () => {
+    if (!isBirdEyeView) {
+      setCurrentView3D((prev) => (prev + 1) % 4); // Move clockwise
+    } else {
+      // In bird's eye view, rotate orientation
+      setBirdEyeOrientation((prev) => (prev + 1) % 2);
+    }
+  };
+
+  const switchToBirdEye = () => {
+    setIsBirdEyeView(true);
+  };
+
+  const switchTo3DView = () => {
+    setIsBirdEyeView(false);
+  };
+
+  // Zoom functions (50% to 200%)
+  const zoomIn = () => {
+    setZoomLevel((prev) => Math.min(prev + 10, 200));
+  };
+
+  const zoomOut = () => {
+    setZoomLevel((prev) => Math.max(prev - 10, 50));
+  };
 
   // Categorize objects into walls, rooms, and regular objects
   const { walls, rooms, objects } = useMemo(() => {
@@ -225,7 +330,11 @@ export function FloorPlanViewer3D({
       <div className="flex-1 relative">
         <Canvas
           camera={{
-            position: [0, 150, 150],
+            position: [
+              FLOOR_CENTER_X + CAMERA_DISTANCE * Math.cos(ELEVATION_ANGLE) * Math.cos(0),
+              CAMERA_DISTANCE * Math.sin(ELEVATION_ANGLE),
+              FLOOR_CENTER_Z + CAMERA_DISTANCE * Math.cos(ELEVATION_ANGLE) * Math.sin(0)
+            ],
             fov: 60,
             near: 0.1,
             far: 10000,
@@ -249,7 +358,7 @@ export function FloorPlanViewer3D({
           </Suspense>
 
           {/* Grid Helper */}
-          {meshConfig.settings.gridHelper && (
+          {showGrid && (
             <Grid
               args={[2000, 2000]}
               cellSize={10}
@@ -301,27 +410,107 @@ export function FloorPlanViewer3D({
           </Suspense>
 
           {/* Camera Controls */}
-          <OrbitControls
-            enablePan={true}
-            enableZoom={true}
-            enableRotate={true}
-            autoRotate={meshConfig.settings.autoRotation}
-            autoRotateSpeed={0.5}
-            maxPolarAngle={Math.PI / 2}
-            minDistance={20}
-            maxDistance={800}
+          <CameraController
+            isBirdEyeView={isBirdEyeView}
+            currentView3D={currentView3D}
+            birdEyeOrientation={birdEyeOrientation}
+            zoomLevel={zoomLevel}
           />
         </Canvas>
 
-        {/* Controls Legend */}
-        <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-sm p-4 rounded-lg shadow-lg text-sm">
-          <h3 className="font-semibold mb-2">Controls</h3>
-          <ul className="space-y-1 text-gray-700">
-            <li>🖱️ Left Click + Drag: Rotate</li>
-            <li>🖱️ Right Click + Drag: Pan</li>
-            <li>🖱️ Scroll: Zoom</li>
-            <li>🖱️ Click Object: Select</li>
-          </ul>
+        {/* Navigation Arrows - Bottom Center */}
+        <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 flex flex-col items-center gap-2">
+          {/* Up/Down Arrows for Bird's Eye View Toggle */}
+          <div className="flex items-center justify-center">
+            {!isBirdEyeView ? (
+              <button
+                onClick={switchToBirdEye}
+                className="bg-white/90 backdrop-blur-sm hover:bg-white p-3 rounded-lg shadow-lg transition-all hover:scale-110"
+                title="Switch to Bird's Eye View"
+              >
+                <ChevronUp className="w-6 h-6 text-gray-700" />
+              </button>
+            ) : (
+              <button
+                onClick={switchTo3DView}
+                className="bg-white/90 backdrop-blur-sm hover:bg-white p-3 rounded-lg shadow-lg transition-all hover:scale-110"
+                title="Switch to 3D View"
+              >
+                <ChevronDown className="w-6 h-6 text-gray-700" />
+              </button>
+            )}
+          </div>
+
+          {/* Left/Right Arrows for Rotation */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={rotateLeft}
+              className="bg-white/90 backdrop-blur-sm hover:bg-white p-3 rounded-lg shadow-lg transition-all hover:scale-110"
+              title={isBirdEyeView ? "Rotate View" : "Rotate Left"}
+            >
+              <ChevronLeft className="w-6 h-6 text-gray-700" />
+            </button>
+            <div className="bg-white/90 backdrop-blur-sm px-4 py-2 rounded-lg shadow-lg text-sm font-semibold text-gray-700">
+              {isBirdEyeView ? `Bird's Eye (${birdEyeOrientation === 0 ? 'H' : 'V'})` : `View ${currentView3D + 1}/4`}
+            </div>
+            <button
+              onClick={rotateRight}
+              className="bg-white/90 backdrop-blur-sm hover:bg-white p-3 rounded-lg shadow-lg transition-all hover:scale-110"
+              title={isBirdEyeView ? "Rotate View" : "Rotate Right"}
+            >
+              <ChevronRight className="w-6 h-6 text-gray-700" />
+            </button>
+          </div>
+        </div>
+
+        {/* View Info & Zoom Controls */}
+        <div className="absolute bottom-4 left-4 flex flex-col gap-2">
+          {/* View Info */}
+          <div className="bg-white/90 backdrop-blur-sm p-3 rounded-lg shadow-lg text-sm">
+            <p className="font-semibold text-gray-900">
+              {isBirdEyeView ? "Bird's Eye View" : "3D View"}
+            </p>
+            <p className="text-xs text-gray-600 mt-1">
+              Click objects to select
+            </p>
+          </div>
+
+          {/* Zoom Controls */}
+          <div className="bg-white/90 backdrop-blur-sm p-3 rounded-lg shadow-lg">
+            <p className="text-xs font-semibold text-gray-700 mb-2">Zoom: {zoomLevel}%</p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={zoomOut}
+                disabled={zoomLevel <= 50}
+                className={`px-3 py-1 rounded text-xs font-semibold transition-all ${
+                  zoomLevel <= 50
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    : 'bg-blue-100 hover:bg-blue-200 text-blue-700'
+                }`}
+                title="Zoom Out"
+              >
+                -
+              </button>
+              <div className="flex-1 bg-gray-200 h-2 rounded-full overflow-hidden">
+                <div
+                  className="bg-blue-500 h-full transition-all duration-200"
+                  style={{ width: `${((zoomLevel - 50) / 150) * 100}%` }}
+                />
+              </div>
+              <button
+                onClick={zoomIn}
+                disabled={zoomLevel >= 200}
+                className={`px-3 py-1 rounded text-xs font-semibold transition-all ${
+                  zoomLevel >= 200
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    : 'bg-blue-100 hover:bg-blue-200 text-blue-700'
+                }`}
+                title="Zoom In"
+              >
+                +
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Object Count */}
@@ -390,10 +579,11 @@ export function FloorPlanViewer3D({
           {/* Objects Section */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <h3 className="font-semibold text-sm text-gray-700">Objects ({objects.length + 2})</h3>
+              <h3 className="font-semibold text-sm text-gray-700">Objects ({objects.length + 3})</h3>
               <div className="flex gap-1">
                 <button
                   onClick={() => {
+                    setShowGrid(true);
                     setShowWalls(true);
                     setShowExteriorWalls(true);
                     toggleAllOfType(objects.map(o => o.name), true);
@@ -405,6 +595,7 @@ export function FloorPlanViewer3D({
                 </button>
                 <button
                   onClick={() => {
+                    setShowGrid(false);
                     setShowWalls(false);
                     setShowExteriorWalls(false);
                     toggleAllOfType(objects.map(o => o.name), false);
@@ -417,6 +608,19 @@ export function FloorPlanViewer3D({
               </div>
             </div>
             <div className="space-y-1 max-h-96 overflow-y-auto">
+              {/* Grid */}
+              <div className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
+                <span className="text-sm text-gray-700 truncate flex-1">Grid</span>
+                <button
+                  onClick={() => setShowGrid(!showGrid)}
+                  className={`text-xs px-3 py-1 rounded ${
+                    showGrid ? 'bg-green-100 hover:bg-green-200' : 'bg-gray-100 hover:bg-gray-200'
+                  }`}
+                >
+                  {showGrid ? 'Hide' : 'Show'}
+                </button>
+              </div>
+
               {/* Interior Walls */}
               <div className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
                 <span className="text-sm text-gray-700 truncate flex-1">Interior Walls</span>
@@ -445,18 +649,22 @@ export function FloorPlanViewer3D({
 
               {/* Regular objects */}
               {objects.map(({ name }) => (
-                <label
+                <div
                   key={name}
-                  className="flex items-center justify-between p-2 hover:bg-gray-50 rounded cursor-pointer"
+                  className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
                 >
                   <span className="text-sm text-gray-700 truncate flex-1">{name}</span>
-                  <input
-                    type="checkbox"
-                    checked={visibleObjects.has(name)}
-                    onChange={() => toggleObject(name)}
-                    className="ml-2"
-                  />
-                </label>
+                  <button
+                    onClick={() => toggleObject(name)}
+                    className={`text-xs px-3 py-1 rounded ${
+                      visibleObjects.has(name)
+                        ? 'bg-green-100 hover:bg-green-200'
+                        : 'bg-gray-100 hover:bg-gray-200'
+                    }`}
+                  >
+                    {visibleObjects.has(name) ? 'Hide' : 'Show'}
+                  </button>
+                </div>
               ))}
             </div>
           </div>
@@ -464,6 +672,64 @@ export function FloorPlanViewer3D({
       </div>
     </div>
   );
+}
+
+// Camera Controller Component
+interface CameraControllerProps {
+  isBirdEyeView: boolean;
+  currentView3D: number;
+  birdEyeOrientation: number;
+  zoomLevel: number;
+}
+
+function CameraController({ isBirdEyeView, currentView3D, birdEyeOrientation, zoomLevel }: CameraControllerProps) {
+  const { camera } = useThree();
+  const targetPosition = useRef(new THREE.Vector3());
+  const targetLookAt = useRef(new THREE.Vector3());
+  const targetUp = useRef(new THREE.Vector3(0, 1, 0));
+
+  useEffect(() => {
+    // Calculate zoom factor (100% = 1.0, 200% = 0.5, 50% = 2.0)
+    // Inverse relationship: higher zoom = closer camera = smaller distance multiplier
+    const zoomFactor = 100 / zoomLevel;
+
+    // Update target based on current view
+    if (isBirdEyeView) {
+      const birdConfig = CAMERA_POSITIONS_BIRD[birdEyeOrientation];
+      // Apply zoom to bird's eye height
+      const zoomedPosition = birdConfig.position.clone();
+      zoomedPosition.y *= zoomFactor;
+      targetPosition.current.copy(zoomedPosition);
+      targetLookAt.current.copy(birdConfig.target);
+      targetUp.current.copy(birdConfig.up);
+    } else {
+      const viewConfig = CAMERA_POSITIONS_3D[currentView3D];
+      // Apply zoom to 3D view position (distance from center)
+      const direction = viewConfig.position.clone().sub(viewConfig.target);
+      const zoomedPosition = viewConfig.target.clone().add(direction.multiplyScalar(zoomFactor));
+      targetPosition.current.copy(zoomedPosition);
+      targetLookAt.current.copy(viewConfig.target);
+      targetUp.current.set(0, 1, 0); // Standard up vector for 3D views
+    }
+  }, [isBirdEyeView, currentView3D, birdEyeOrientation, zoomLevel]);
+
+  useFrame(() => {
+    // Smooth camera position transition
+    camera.position.lerp(targetPosition.current, 0.1);
+
+    // Smooth camera look-at transition
+    const currentLookAt = new THREE.Vector3();
+    camera.getWorldDirection(currentLookAt);
+    currentLookAt.multiplyScalar(100).add(camera.position);
+    currentLookAt.lerp(targetLookAt.current, 0.1);
+    camera.lookAt(currentLookAt);
+
+    // Smooth up vector transition
+    camera.up.lerp(targetUp.current, 0.1);
+    camera.up.normalize();
+  });
+
+  return null;
 }
 
 // Component to render walls
